@@ -4,7 +4,7 @@ class CfgPatches {
         units[] = {};
         weapons[] = {};
         requiredVersion = 1.0;
-        requiredAddons[] = {"A3A_core"};
+        requiredAddons[] = {"A3A_core", "A3A_gui"};
         author = "Antigravity";
     };
 };
@@ -12,7 +12,7 @@ class CfgPatches {
 class CfgFunctions {
     class A3A_Ultimate_Tweaks_Extender {
         class tweaks {
-            file = "\x\A3A\addons\tweaks\functions";
+            file = "\CL_Antistasi_Tweaks\functions";
             class postInit { postInit = 1; };
         };
     };
@@ -21,6 +21,14 @@ class CfgFunctions {
 class A3A {
     class Params {
         class ExtenderParams; // Forward declaration
+        
+        class A3A_tweak_autoBuild : ExtenderParams {
+            title = "Builder: Instant/Auto Construction";
+            tooltip = "Instantly builds objects placed from construction crates without needing manual engineer tool assembly.";
+            values[] = {0, 1};
+            texts[] = {"Disabled (Manual Construction)", "Enabled (Instant Construction)"};
+            default = 0;
+        };
         
         class A3A_selfReviveTweak_NoKit : ExtenderParams {
             title = "Self-Revive: FAK Requirement";
@@ -57,12 +65,45 @@ class A3A {
             texts[] = {"0m (Strict Marker Boundaries)", "25m", "50m", "75m", "100m", "150m", "200m"};
             default = 0;
         };
-        class A3A_tweak_fastTravelEnemyDistance : ExtenderParams {
-            title = "Fast Travel: Enemy Detection Range";
-            tooltip = "Custom distance check for nearby enemies that blocks fast travel (uses default if disabled).";
-            values[] = {-1, 0, 100, 200, 300, 500};
-            texts[] = {"Disabled (Use Default)", "0m (No Enemy Check)", "100m", "200m", "300m", "500m"};
-            default = -1;
+    };
+};
+
+class A3A_teamLeaderBuilder
+{
+    class ControlsBackground
+    {
+        class TitleBarBackground
+        {
+            y = (safeZoneY + safeZoneH) - 77 * (pixelH * 2 * pixelScale);
+        };
+        class Background
+        {
+            y = (safeZoneY + safeZoneH) - 72 * (pixelH * 2 * pixelScale);
+            h = 72 * (pixelH * 2 * pixelScale);
+        };
+    };
+    class Controls
+    {
+        class TitlebarText
+        {
+            y = (safeZoneY + safeZoneH) - 77 * (pixelH * 2 * pixelScale);
+        };
+        class RemMoneyText
+        {
+            y = (safeZoneY + safeZoneH) - 77 * (pixelH * 2 * pixelScale);
+        };
+        class MainContent
+        {
+            y = (safeZoneY + safeZoneH) - 72 * (pixelH * 2 * pixelScale);
+            h = 72 * (pixelH * 2 * pixelScale);
+            class Controls
+            {
+                class BuildingControlsGroup
+                {
+                    h = 68 * (pixelH * 2 * pixelScale);
+                };
+            };
         };
     };
 };
+
