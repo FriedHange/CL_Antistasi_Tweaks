@@ -1,7 +1,7 @@
 /*
-    fn_postInit.sqf
-    Initialize the Antistasi Ultimate Tweaks Extender.
-    Overrides core functions with customized versions.
+	    fn_postInit.sqf
+	    Initialize the Antistasi Ultimate Tweaks Extender.
+	    Overrides core functions with customized versions.
 */
 diag_log "[A3A Ultimate Tweaks Extender] Initializing overrides...";
 
@@ -15,7 +15,7 @@ A3A_fnc_isWithinMarkerArea = compile preprocessFileLineNumbers "\CL_Antistasi_Tw
 A3A_fnc_placeBuilderObjects_original = A3A_fnc_placeBuilderObjects;
 A3A_fnc_placeBuilderObjects = compile preprocessFileLineNumbers "\CL_Antistasi_Tweaks\functions\fn_placeBuilderObjects.sqf";
 
-// Compile the helper builder UI resizer globally
+// compile the helper builder UI resizer globally
 A3A_fnc_builderUIResize = compile preprocessFileLineNumbers "\CL_Antistasi_Tweaks\functions\fn_builderUIResize.sqf";
 
 // Override team leader placer dialog to inject expand/collapse button.
@@ -35,81 +35,89 @@ A3A_fnc_buildingComplete = compile preprocessFileLineNumbers "\CL_Antistasi_Twea
 
 // Sync lobby parameters from server to all clients
 if (isServer) then {
-    diag_log "[A3A Ultimate Tweaks Extender] Loading and broadcasting lobby parameters...";
-    {
-        _x params ["_paramName", "_defaultValue"];
-        private _val = [_paramName, _defaultValue] call BIS_fnc_getParamValue;
-        missionNamespace setVariable [_paramName, _val, true];
-        diag_log format ["[A3A Ultimate Tweaks Extender] Synced parameter: %1 = %2", _paramName, _val];
-    } forEach [
-        ["A3A_tweak_autoBuild", 1],
-        ["A3A_selfReviveTweak_NoKit", 0],
-        ["A3A_selfReviveTweak_Cooldown", 300],
-        ["A3A_selfReviveTweak_Damage", 50],
-        ["A3A_tweak_saveRadiusHQ", 50],
-        ["A3A_tweak_saveRadiusBuffer", 0],
-        ["A3A_tweak_missionCooldown", 0],
-        ["A3A_tweak_randomMissionChanceMultiplier", 1],
-        ["A3A_tweak_fastTravelSpeedMultiplier", 1],
-        ["A3A_tweak_builderChainRadius", 0],
-        ["A3A_tweak_discoveryReveal", 1],
-        ["A3A_tweak_discoveryDistance", 200]
-    ];
-};
+	diag_log "[A3A Ultimate Tweaks Extender] Loading and broadcasting lobby parameters...";
+	{
+		_x params ["_paramName", "_defaultValue"];
+		private _val = [_paramName, _defaultValue] call BIS_fnc_getParamValue;
+		missionNamespace setVariable [_paramName, _val, true];
+		diag_log format ["[A3A Ultimate Tweaks Extender] Synced parameter: %1 = %2", _paramName, _val];
+		} forEach [
+			["A3A_tweak_autoBuild", 1],
+			["A3A_selfReviveTweak_NoKit", 0],
+			["A3A_selfReviveTweak_Cooldown", 300],
+			["A3A_selfReviveTweak_Damage", 50],
+			["A3A_tweak_saveRadiusHQ", 50],
+			["A3A_tweak_saveRadiusBuffer", 0],
+			["A3A_tweak_missionCooldown", 0],
+			["A3A_tweak_randomMissionChanceMultiplier", 1],
+			["A3A_tweak_fastTravelSpeedMultiplier", 1],
+			["A3A_tweak_builderChainRadius", 0],
+			["A3A_tweak_discoveryReveal", 1],
+			["A3A_tweak_discoveryDistance", 200]
+		];
+	};
 
-// Client-side loop to reveal hidden enemy zones when player gets near
-if (hasInterface) then {
-    [] spawn {
-        scriptName "A3A_Ultimate_Tweaks_MarkerRevealLoop";
-        waitUntil { !isNil "markersX" && { !isNil "hideEnemyMarkers" } };
-        if !(hideEnemyMarkers) exitWith {};
+	// Client-side loop to reveal hidden enemy zones when player gets near
+	if (hasInterface) then {
+		[] spawn {
+			scriptName "A3A_Ultimate_Tweaks_MarkerRevealLoop";
+			waitUntil {
+				!isNil "markersX" && {
+					!isNil "hideEnemyMarkers"
+				}
+			};
+			if !(hideEnemyMarkers) exitWith {};
 
-        // Queue system variables
-        A3A_tweak_discoveryQueue = [];
-        A3A_tweak_discoveryRunning = false;
+			        // Queue system variables
+			A3A_tweak_discoveryQueue = [];
+			A3A_tweak_discoveryRunning = false;
 
-        private _fnc_processQueue = {
-            if (A3A_tweak_discoveryRunning) exitWith {};
-            A3A_tweak_discoveryRunning = true;
-            [] spawn {
-                while { count A3A_tweak_discoveryQueue > 0 } do {
-                    private _placeName = A3A_tweak_discoveryQueue deleteAt 0;
-                    private _msg = format [
-                        "<t size='1.3' color='#84B062' font='PuristaBold' align='center'>LOCATION DISCOVERED</t><br/><t size='1.7' color='#E3DCBE' font='PuristaMedium' align='center'>%1</t>",
-                        _placeName
-                    ];
-                    // Display text at center-top of screen (y = -0.20), duration 5s, fade-in/out 0.2s
-                    [_msg, -1, -0.20, 5, 0.2, 0, 9700] spawn BIS_fnc_dynamicText;
-                    sleep 5.45; // 0.2s fade-in + 5s duration + 0.2s fade-out + 0.05s buffer
-                };
-                A3A_tweak_discoveryRunning = false;
-            };
-        };
+			private _fnc_processQueue = {
+				if (A3A_tweak_discoveryRunning) exitWith {};
+				A3A_tweak_discoveryRunning = true;
+				[] spawn {
+					while { count A3A_tweak_discoveryQueue > 0 } do {
+						private _placeName = A3A_tweak_discoveryQueue deleteAt 0;
+						private _msg = format [
+							"<t size='1.3' color='#84B062' font='PuristaBold' align='center'>LOCATION DISCOVERED</t><br/><t size='1.7' color='#E3DCBE' font='PuristaMedium' align='center'>%1</t>",
+							_placeName
+						];
+						                    // Display text at center-top of screen (y = 0.23), duration 2s, fade-in/out 0.2s
+						[_msg, -1, -0.30, 5, 0.2, 0, 9700] spawn BIS_fnc_dynamicText;
+						                    sleep 5.45; // 0.2s fade-in + 5s duration + 0.2s fade-out + 0.05s buffer
+					};
+					A3A_tweak_discoveryRunning = false;
+				};
+			};
 
-        while { true } do {
-            sleep 5;
-            // Check if feature is enabled via lobby parameters
-            private _enabled = missionNamespace getVariable ["A3A_tweak_discoveryReveal", 1];
-            if (_enabled isEqualTo 0) then { continue };
+			while { true } do {
+				sleep 5;
+				            // Check if feature is enabled via lobby parameters
+				private _enabled = missionNamespace getVariable ["A3A_tweak_discoveryReveal", 1];
+				if (_enabled isEqualTo 0) then {
+					continue
+				};
 
-            if (!alive player) then { continue };
-            private _playerPos = getPos player;
-            private _revealDist = missionNamespace getVariable ["A3A_tweak_discoveryDistance", 200];
+				if (!alive player) then {
+					continue
+				};
+				private _playerPos = getPos player;
+				private _revealDist = missionNamespace getVariable ["A3A_tweak_discoveryDistance", 200];
 
-            {
-                private _dumMarker = "Dum" + _x;
-                if (markerAlpha _dumMarker == 0) then {
-                    private _markerPos = getMarkerPos _x;
-                    if (_playerPos distance2D _markerPos < _revealDist) then {
-                        _dumMarker setMarkerAlpha 1;
-                        A3A_tweak_discoveryQueue pushBack (markerText _dumMarker);
-                        [] call _fnc_processQueue;
-                    };
-                };
-            } forEach markersX;
-        };
-    };
-};
+				{
+					private _dumMarker = "Dum" + _x;
+					if (markerAlpha _dumMarker == 0) then {
+						private _markerPos = getMarkerPos _x;
+						if (_playerPos distance2D _markerPos < _revealDist) then {
+							_dumMarker setMarkerAlpha 1;
+							A3A_tweak_discoveryQueue pushBack (markerText _dumMarker);
+							[] call _fnc_processQueue;
+						};
+					};
+				} forEach markersX;
+			};
+		};
+	};
 
-// Overrides applied
-diag_log "[A3A Ultimate Tweaks Extender] Overrides applied.";
+	// Overrides applied
+	diag_log "[A3A Ultimate Tweaks Extender] Overrides applied.";
