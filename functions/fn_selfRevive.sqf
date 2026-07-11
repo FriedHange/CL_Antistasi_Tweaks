@@ -11,7 +11,11 @@ private _noKitRequired = missionNamespace getVariable ["A3A_selfReviveTweak_NoKi
 private _hasFAKs = [];
 
 if (!_noKitRequired) then {
-    private _firstAidKits = ["FirstAidKit"] + (A3A_faction_reb get "firstAidKits");
+    private _rebKits = [];
+    if (!isNil "A3A_faction_reb" && {A3A_faction_reb isEqualType createHashMap}) then {
+        _rebKits = A3A_faction_reb getOrDefault ["firstAidKits", []];
+    };
+    private _firstAidKits = ["FirstAidKit"] + _rebKits;
     _hasFAKs = _firstAidKits arrayIntersect items player;
     
     if (_hasFAKs isEqualTo []) exitWith {

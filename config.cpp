@@ -4,7 +4,7 @@ class CfgPatches {
         units[] = {};
         weapons[] = {};
         requiredVersion = 1.0;
-        requiredAddons[] = {"A3A_core", "A3A_gui"};
+        requiredAddons[] = {"A3A_core"};
         author = "Antigravity";
     };
 };
@@ -21,15 +21,50 @@ class CfgFunctions {
 class A3A {
     class Params {
         class ExtenderParams; // Forward declaration
-        
-        class A3A_tweak_autoBuild : ExtenderParams {
-            title = "Builder: Instant/Auto Construction";
-            tooltip = "Instantly builds objects placed from construction crates without needing manual engineer tool assembly.";
-            values[] = {0, 1};
-            texts[] = {"Disabled (Manual Construction)", "Enabled (Instant Construction)"};
+
+        // =====================================================
+        // CL ANTISTASI TWEAKS - BUILDER
+        // =====================================================
+        class CL_Tweaks_Builder_Spacer : ExtenderParams {
+            title = "--- CL Tweaks: Builder ---";
+            tooltip = "Construction box and builder UI settings.";
+            values[] = {0};
+            texts[] = {""};
             default = 0;
         };
-        
+        class A3A_tweak_autoBuild : ExtenderParams {
+            title = "Builder: Instant Construction";
+            tooltip = "Instantly builds objects placed from construction crates without needing manual engineer tool assembly.";
+            values[] = {0, 1};
+            texts[] = {"Disabled (Manual)", "Enabled (Instant)"};
+            default = 1;
+        };
+        /*
+        class A3A_tweak_builderDistance : ExtenderParams {
+            title = "Builder: Interaction Distance";
+            tooltip = "Max distance (in meters) from which engineers can build or cancel unbuilt blueprint boxes. Applies to newly placed boxes.";
+            values[] = {8, 10, 12, 16, 20, 25, 30};
+            texts[] = {"8m (Default)", "10m", "12m", "16m", "20m", "25m", "30m"};
+            default = 8;
+        };
+        */
+        class A3A_tweak_builderChainRadius : ExtenderParams {
+            title = "Builder: Chain Build Radius";
+            tooltip = "When you manually finish building one object, other unbuilt objects within this radius are also completed automatically. 0 = Disabled. Only applies with manual construction.";
+            values[] = {0, 5, 10, 15, 20, 30, 50};
+            texts[] = {"Disabled (0m)", "5 Meters", "10 Meters", "15 Meters", "20 Meters", "30 Meters", "50 Meters"};
+            default = 0;
+        };
+        // =====================================================
+        // CL ANTISTASI TWEAKS - SELF-REVIVE
+        // =====================================================
+        class CL_Tweaks_SelfRevive_Spacer : ExtenderParams {
+            title = "--- CL Tweaks: Self-Revive ---";
+            tooltip = "Settings for the self-revive mechanic.";
+            values[] = {0};
+            texts[] = {""};
+            default = 0;
+        };
         class A3A_selfReviveTweak_NoKit : ExtenderParams {
             title = "Self-Revive: FAK Requirement";
             tooltip = "Requires a First Aid Kit (or rebel healing item) to perform self-revive, or disables the check entirely.";
@@ -41,15 +76,69 @@ class A3A {
             title = "Self-Revive: Cooldown (Seconds)";
             tooltip = "Cooldown in seconds between consecutive self-revives.";
             values[] = {0, 30, 60, 120, 300, 600};
-            texts[] = {"0s (No Cooldown)", "30s", "60s (1 Minute)", "120s (2 Minutes)", "300s (5 Minutes)", "600s (10 Minutes)"};
+            texts[] = {"0s (No Cooldown)", "30s", "60s (1 min)", "120s (2 min)", "300s (5 min)", "600s (10 min)"};
             default = 300;
         };
         class A3A_selfReviveTweak_Damage : ExtenderParams {
-            title = "Self-Revive: Damage Received";
-            tooltip = "The amount of damage/wounds the player has immediately after self-reviving.";
+            title = "Self-Revive: Damage After Revive";
+            tooltip = "The amount of damage the player has immediately after self-reviving.";
             values[] = {0, 25, 50, 75};
             texts[] = {"0% (Full Health)", "25% Wounded", "50% Wounded (Default)", "75% Wounded"};
             default = 50;
+        };
+
+        // =====================================================
+        // CL ANTISTASI TWEAKS - PETROS / MISSIONS
+        // =====================================================
+        class CL_Tweaks_Petros_Spacer : ExtenderParams {
+            title = "--- CL Tweaks: Petros & Missions ---";
+            tooltip = "Settings for Petros mission requests and random events.";
+            values[] = {0};
+            texts[] = {""};
+            default = 0;
+        };
+        class A3A_tweak_missionCooldown : ExtenderParams {
+            title = "Petros: Request Cooldown";
+            tooltip = "Cooldown in minutes before you can request a manual mission from Petros again.";
+            values[] = {0, 3, 5, 10, 15, 30};
+            texts[] = {"No Cooldown", "3 Minutes", "5 Minutes", "10 Minutes", "15 Minutes", "30 Minutes"};
+            default = 0;
+        };
+        class A3A_tweak_randomMissionChanceMultiplier : ExtenderParams {
+            title = "Petros: Random Mission Chance";
+            tooltip = "Multiplier for Petros triggering random missions periodically. Higher = more frequent random events.";
+            values[] = {0, 0.5, 1, 2, 5};
+            texts[] = {"Disabled (0x)", "Half (0.5x)", "Normal (1x)", "Double (2x)", "High (5x)"};
+            default = 1;
+        };
+
+        // =====================================================
+        // CL ANTISTASI TWEAKS - FAST TRAVEL
+        // =====================================================
+        class CL_Tweaks_FastTravel_Spacer : ExtenderParams {
+            title = "--- CL Tweaks: Fast Travel ---";
+            tooltip = "Settings for the fast travel system.";
+            values[] = {0};
+            texts[] = {""};
+            default = 0;
+        };
+        class A3A_tweak_fastTravelSpeedMultiplier : ExtenderParams {
+            title = "Fast Travel: Speed Multiplier";
+            tooltip = "Multiplier applied to fast travel time. 'Instant' skips the black-screen wait entirely.";
+            values[] = {1, 2, 5, 10, 9999};
+            texts[] = {"1x (Default)", "2x Faster", "5x Faster", "10x Faster", "Instant (No Wait)"};
+            default = 1;
+        };
+
+        // =====================================================
+        // CL ANTISTASI TWEAKS - HQ & BASES
+        // =====================================================
+        class CL_Tweaks_HQ_Spacer : ExtenderParams {
+            title = "--- CL Tweaks: HQ & Bases ---";
+            tooltip = "Settings for vehicle/static saving around HQ and friendly bases.";
+            values[] = {0};
+            texts[] = {""};
+            default = 0;
         };
         class A3A_tweak_saveRadiusHQ : ExtenderParams {
             title = "HQ: Vehicle/Static Save Radius";
@@ -62,47 +151,33 @@ class A3A {
             title = "Bases: Save Radius Buffer";
             tooltip = "Extra distance (in meters) added to the border area of friendly outposts/airbases for saving vehicles and statics.";
             values[] = {0, 25, 50, 75, 100, 150, 200};
-            texts[] = {"0m (Strict Marker Boundaries)", "25m", "50m", "75m", "100m", "150m", "200m"};
+            texts[] = {"0m (Strict Boundary)", "25m", "50m", "75m", "100m", "150m", "200m"};
             default = 0;
         };
-    };
-};
 
-class A3A_teamLeaderBuilder
-{
-    class ControlsBackground
-    {
-        class TitleBarBackground
-        {
-            y = (safeZoneY + safeZoneH) - 77 * (pixelH * 2 * pixelScale);
+        // =====================================================
+        // CL ANTISTASI TWEAKS - HIDDEN ZONES
+        // =====================================================
+        class CL_Tweaks_HiddenZones_Spacer : ExtenderParams {
+            title = "--- CL Tweaks: Hidden Zones ---";
+            tooltip = "Settings for discovering and auto-revealing hidden enemy outposts.";
+            values[] = {0};
+            texts[] = {""};
+            default = 0;
         };
-        class Background
-        {
-            y = (safeZoneY + safeZoneH) - 72 * (pixelH * 2 * pixelScale);
-            h = 72 * (pixelH * 2 * pixelScale);
+        class A3A_tweak_discoveryReveal : ExtenderParams {
+            title = "Hidden Zones: Auto-Reveal";
+            tooltip = "Automatically reveals hidden enemy outposts on the map when you get close.";
+            values[] = {0, 1};
+            texts[] = {"Disabled", "Enabled"};
+            default = 1;
         };
-    };
-    class Controls
-    {
-        class TitlebarText
-        {
-            y = (safeZoneY + safeZoneH) - 77 * (pixelH * 2 * pixelScale);
-        };
-        class RemMoneyText
-        {
-            y = (safeZoneY + safeZoneH) - 77 * (pixelH * 2 * pixelScale);
-        };
-        class MainContent
-        {
-            y = (safeZoneY + safeZoneH) - 72 * (pixelH * 2 * pixelScale);
-            h = 72 * (pixelH * 2 * pixelScale);
-            class Controls
-            {
-                class BuildingControlsGroup
-                {
-                    h = 68 * (pixelH * 2 * pixelScale);
-                };
-            };
+        class A3A_tweak_discoveryDistance : ExtenderParams {
+            title = "Hidden Zones: Reveal Distance";
+            tooltip = "Max distance (in meters) from the outpost center/flag to trigger discovery.";
+            values[] = {50, 100, 150, 200, 300, 500};
+            texts[] = {"50m", "100m", "150m", "200m (Default)", "300m", "500m"};
+            default = 200;
         };
     };
 };
