@@ -75,12 +75,12 @@ if (hasInterface) then {
                 while { count A3A_tweak_discoveryQueue > 0 } do {
                     private _placeName = A3A_tweak_discoveryQueue deleteAt 0;
                     private _msg = format [
-                        "<t size='1.8' color='#FFD700' font='PuristaBold' align='center'>LOCATION DISCOVERED</t><br/><t size='2.2' color='#FFFFFF' font='PuristaMedium' align='center'>%1</t>",
+                        "<t size='1.3' color='#FFD700' font='PuristaBold' align='center'>LOCATION DISCOVERED</t><br/><t size='1.7' color='#FFFFFF' font='PuristaMedium' align='center'>%1</t>",
                         _placeName
                     ];
-                    // Display text at top of screen (y = 0.15), duration 2s, fade-in/out 0.2s
-                    [_msg, -1, 0.15, 2, 0.2, 0, 9700] spawn BIS_fnc_dynamicText;
-                    sleep 2.45; // 0.2s fade-in + 2s duration + 0.2s fade-out + 0.05s buffer
+                    // Display text at center-top of screen (y = 0.23), duration 2s, fade-in/out 0.2s
+                    [_msg, -1, 0.23, 5, 0.2, 0, 9700] spawn BIS_fnc_dynamicText;
+                    sleep 5.45; // 0.2s fade-in + 5s duration + 0.2s fade-out + 0.05s buffer
                 };
                 A3A_tweak_discoveryRunning = false;
             };

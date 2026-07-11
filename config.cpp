@@ -156,24 +156,24 @@ class A3A {
         };
 
         // =====================================================
-        // CL ANTISTASI TWEAKS - HIDDEN ZONES
+        // CL ANTISTASI TWEAKS - FOG OF WAR
         // =====================================================
-        class CL_Tweaks_HiddenZones_Spacer : ExtenderParams {
-            title = "--- CL Tweaks: Hidden Zones ---";
+        class CL_Tweaks_FogOfWar_Spacer : ExtenderParams {
+            title = "--- CL Tweaks: Fog of War ---";
             tooltip = "Settings for discovering and auto-revealing hidden enemy outposts.";
             values[] = {0};
             texts[] = {""};
             default = 0;
         };
         class A3A_tweak_discoveryReveal : ExtenderParams {
-            title = "Hidden Zones: Auto-Reveal";
+            title = "Fog of War: Auto-Reveal";
             tooltip = "Automatically reveals hidden enemy outposts on the map when you get close.";
             values[] = {0, 1};
             texts[] = {"Disabled", "Enabled"};
             default = 1;
         };
         class A3A_tweak_discoveryDistance : ExtenderParams {
-            title = "Hidden Zones: Reveal Distance";
+            title = "Fog of War: Reveal Distance";
             tooltip = "Max distance (in meters) from the outpost center/flag to trigger discovery.";
             values[] = {50, 100, 150, 200, 300, 500};
             texts[] = {"50m", "100m", "150m", "200m (Default)", "300m", "500m"};
