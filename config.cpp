@@ -33,7 +33,7 @@ class A3A {
             default = 0;
         };
         class A3A_tweak_autoBuild : ExtenderParams {
-            title = "Builder: Instant Construction";
+            title = "Instant Construction";
             tooltip = "Instantly builds objects placed from construction crates without needing manual engineer tool assembly.";
             values[] = {0, 1};
             texts[] = {"Disabled (Manual)", "Enabled (Instant)"};
@@ -41,7 +41,7 @@ class A3A {
         };
         /*
         class A3A_tweak_builderDistance : ExtenderParams {
-            title = "Builder: Interaction Distance";
+            title = "Interaction Distance";
             tooltip = "Max distance (in meters) from which engineers can build or cancel unbuilt blueprint boxes. Applies to newly placed boxes.";
             values[] = {8, 10, 12, 16, 20, 25, 30};
             texts[] = {"8m (Default)", "10m", "12m", "16m", "20m", "25m", "30m"};
@@ -49,7 +49,7 @@ class A3A {
         };
         */
         class A3A_tweak_builderChainRadius : ExtenderParams {
-            title = "Builder: Chain Build Radius";
+            title = "Chain Build Radius";
             tooltip = "When you manually finish building one object, other unbuilt objects within this radius are also completed automatically. 0 = Disabled. Only applies with manual construction.";
             values[] = {0, 5, 10, 15, 20, 30, 50};
             texts[] = {"Disabled (0m)", "5 Meters", "10 Meters", "15 Meters", "20 Meters", "30 Meters", "50 Meters"};
@@ -66,21 +66,21 @@ class A3A {
             default = 0;
         };
         class A3A_selfReviveTweak_NoKit : ExtenderParams {
-            title = "Self-Revive: FAK Requirement";
+            title = "FAK Requirement";
             tooltip = "Requires a First Aid Kit (or rebel healing item) to perform self-revive, or disables the check entirely.";
             values[] = {0, 1};
             texts[] = {"Requires First Aid Kit", "No Kit Required"};
             default = 0;
         };
         class A3A_selfReviveTweak_Cooldown : ExtenderParams {
-            title = "Self-Revive: Cooldown (Seconds)";
+            title = "Cooldown (Seconds)";
             tooltip = "Cooldown in seconds between consecutive self-revives.";
             values[] = {0, 30, 60, 120, 300, 600};
             texts[] = {"0s (No Cooldown)", "30s", "60s (1 min)", "120s (2 min)", "300s (5 min)", "600s (10 min)"};
             default = 300;
         };
         class A3A_selfReviveTweak_Damage : ExtenderParams {
-            title = "Self-Revive: Damage After Revive";
+            title = "Damage After Revive";
             tooltip = "The amount of damage the player has immediately after self-reviving.";
             values[] = {0, 25, 50, 75};
             texts[] = {"0% (Full Health)", "25% Wounded", "50% Wounded (Default)", "75% Wounded"};
@@ -98,14 +98,14 @@ class A3A {
             default = 0;
         };
         class A3A_tweak_missionCooldown : ExtenderParams {
-            title = "Petros: Request Cooldown";
+            title = "Request Cooldown";
             tooltip = "Cooldown in minutes before you can request a manual mission from Petros again.";
             values[] = {0, 3, 5, 10, 15, 30};
             texts[] = {"No Cooldown", "3 Minutes", "5 Minutes", "10 Minutes", "15 Minutes", "30 Minutes"};
             default = 0;
         };
         class A3A_tweak_randomMissionChanceMultiplier : ExtenderParams {
-            title = "Petros: Random Mission Chance";
+            title = "Random Mission Chance";
             tooltip = "Multiplier for Petros triggering random missions periodically. Higher = more frequent random events.";
             values[] = {0, 0.5, 1, 2, 5};
             texts[] = {"Disabled (0x)", "Half (0.5x)", "Normal (1x)", "Double (2x)", "High (5x)"};
@@ -123,7 +123,7 @@ class A3A {
             default = 0;
         };
         class A3A_tweak_fastTravelSpeedMultiplier : ExtenderParams {
-            title = "Fast Travel: Speed Multiplier";
+            title = "Speed Multiplier";
             tooltip = "Multiplier applied to fast travel time. 'Instant' skips the black-screen wait entirely.";
             values[] = {1, 2, 5, 10, 9999};
             texts[] = {"1x (Default)", "2x Faster", "5x Faster", "10x Faster", "Instant (No Wait)"};
@@ -166,14 +166,14 @@ class A3A {
             default = 0;
         };
         class A3A_tweak_discoveryReveal : ExtenderParams {
-            title = "Fog of War: Auto-Reveal";
+            title = "Auto-Reveal";
             tooltip = "Automatically reveals hidden enemy outposts on the map when you get close.";
             values[] = {0, 1};
             texts[] = {"Disabled", "Enabled"};
             default = 1;
         };
         class A3A_tweak_discoveryDistance : ExtenderParams {
-            title = "Fog of War: Reveal Distance";
+            title = "Reveal Distance";
             tooltip = "Max distance (in meters) from the outpost center/flag to trigger discovery.";
             values[] = {50, 100, 150, 200, 300, 500};
             texts[] = {"50m", "100m", "150m", "200m (Default)", "300m", "500m"};
