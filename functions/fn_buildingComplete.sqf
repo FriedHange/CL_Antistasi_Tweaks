@@ -78,7 +78,6 @@ if (_finished && {_chainBuild}) then {
         };
 
         diag_log format ["[A3A Tweaks] Chain building triggered. Radius=%1m. Found %2 items in range.", _radius, count _nearPlanks];
-        [format ["[A3A Tweaks] Chain building: radius=%1m, found %2 nearby items.", _radius, count _nearPlanks]] remoteExec ["systemChat", 0];
 
         {
             // Call completion on neighbor, disable recurse chaining to avoid infinite loop

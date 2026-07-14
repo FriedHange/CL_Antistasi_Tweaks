@@ -180,9 +180,9 @@ while {true} do {
 	if (_textArsenal != "") then {_textX = format [localize "STR_comms_mp_arsenal_updated", _textX, _textArsenal]};
 	[petros, "taxRep", _textX] remoteExec ["A3A_fnc_commsMP", [teamPlayer, civilian]];
 
-	// Petros Random mission trigger chance (Applying customizable multiplier)
+	// Petros Random mission trigger chance (Applying customizable multiplier, capped at 50% max to avoid mission overload)
 	private _randomMult = missionNamespace getVariable ["A3A_tweak_randomMissionChanceMultiplier", 1.0];
-	private _missionChance = (5 * A3A_activePlayerCount) * _randomMult;
+	private _missionChance = ((5 * A3A_activePlayerCount) * _randomMult) min 50;
 	if ((!bigAttackInProgress) and (random 100 < _missionChance)) then {[] spawn A3A_fnc_missionRequest};
 
 	//Removed from scheduler for now, as it errors on Headless Clients.

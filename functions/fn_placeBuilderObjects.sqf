@@ -6,9 +6,6 @@ diag_log "[A3A Ultimate Tweaks Extender] placeBuilderObjects custom starting..."
 
 params [["_objects",[],[[]]]];
 
-// Global debug broadcast to verify function execution and parameter state
-[format ["[A3A Tweaks Debug] Server received placeBuilderObjects. Items: %1, AutoBuild Parameter: %2", count _objects, missionNamespace getVariable ["A3A_tweak_autoBuild", 0]]] remoteExec ["systemChat", 0];
-
 private _autoBuildVal = missionNamespace getVariable ["A3A_tweak_autoBuild", 1]; // Default to 1 (Enabled) if nil
 private _autoBuild = (_autoBuildVal isEqualTo 1) || {(_autoBuildVal isEqualType true) && {_autoBuildVal}};
 
@@ -20,8 +17,7 @@ if (!_autoBuild) exitWith {
     [_objects] call A3A_fnc_placeBuilderObjects_original;
 };
 
-// Send start status to all clients
-[format ["[A3A Tweaks] Auto-Build triggered: Constructing %1 items...", count _objects]] remoteExec ["systemChat", 0];
+diag_log format ["[A3A Tweaks] Auto-Build triggered: Constructing %1 items...", count _objects];
 
 private _runCallback = {
     params[["_object", objNull, [objNull]], ["_callbackName", "", [""]], ["_params", [], [[]]]];
@@ -36,7 +32,7 @@ private _runCallback = {
     try {
         _x params ["_className", "_repairObj", "_position", "_direction", "_price"];
         
-        [format ["[A3A Tweaks] Processing item %1 of %2: %3", _idx + 1, count _objects, _className]] remoteExec ["systemChat", 0];
+        diag_log format ["[A3A Tweaks] Processing item %1 of %2: %3", _idx + 1, count _objects, _className];
 
         if (isNull _repairObj) then {
             // Construction case - instantly build it
@@ -45,7 +41,7 @@ private _runCallback = {
             private _building = createVehicle [_className, _spawnPos, [], 0, "CAN_COLLIDE"];
             
             if (isNull _building) then {
-                [format ["[A3A Tweaks] ERROR: Failed to create global object for %1", _className]] remoteExec ["systemChat", 0];
+                diag_log format ["[A3A Tweaks] ERROR: Failed to create global object for %1", _className];
             } else {
                 if (!isNil "_position" && {!isNil "_direction" && {_position isEqualType [] && {_direction isEqualType []}}}) then {
                     _building setPosWorld _position;
@@ -68,16 +64,15 @@ private _runCallback = {
                 
                 [_building, "A3A_core_onBuildingCompleted"] call _runCallback;
                 
-                [format ["[A3A Tweaks] Success: Instantly constructed %1", _className]] remoteExec ["systemChat", 0];
+                diag_log format ["[A3A Tweaks] Success: Instantly constructed %1", _className];
             };
         } else {
             // Repair case - instantly repair it
             _repairObj call A3A_fnc_repairRuinedBuilding;
             [_repairObj, "A3A_core_onBuildingRepaired"] call _runCallback;
-            [format ["[A3A Tweaks] Success: Repaired %1", typeOf _repairObj]] remoteExec ["systemChat", 0];
+            diag_log format ["[A3A Tweaks] Success: Repaired %1", typeOf _repairObj];
         };
     } catch {
-        [format ["[A3A Tweaks] EXCEPTION: %1", _exception]] remoteExec ["systemChat", 0];
         diag_log format ["[A3A Ultimate Tweaks Extender] CRITICAL: Exception in placeBuilderObjects: %1", _exception];
     };
 } forEach _objects;
@@ -86,4 +81,5 @@ if (!isNil "A3A_buildingsToSave") then {
     publicVariable "A3A_buildingsToSave";
 };
 
-[format ["[A3A Tweaks] Auto-Build completed."]] remoteExec ["systemChat", 0];
+diag_log "[A3A Tweaks] Auto-Build completed.";
+

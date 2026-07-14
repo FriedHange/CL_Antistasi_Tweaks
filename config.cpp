@@ -1,3 +1,8 @@
+class RscListBox;
+class CL_Planning_ListBox_Multi : RscListBox {
+    style = 16;
+};
+
 class CfgPatches {
     class A3A_Ultimate_Tweaks_Extender {
         name = "Antistasi Ultimate Tweaks Extender";
@@ -178,6 +183,52 @@ class A3A {
             values[] = {50, 100, 150, 200, 300, 500};
             texts[] = {"50m", "100m", "150m", "200m (Default)", "300m", "500m"};
             default = 200;
+        };
+
+        // =====================================================
+        // CL ANTISTASI TWEAKS - SIEGE PLANNING
+        // =====================================================
+        class CL_Tweaks_Siege_Spacer : ExtenderParams {
+            title = "--- CL Tweaks: Siege Planning ---";
+            tooltip = "Settings for siege and attack planning.";
+            values[] = {0};
+            texts[] = {""};
+            default = 0;
+        };
+        class A3A_tweak_maxSiegeSquads : ExtenderParams {
+            title = "Max Siege Squads";
+            tooltip = "The maximum number of squads that can participate in a siege (1 to 20).";
+            values[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20};
+            texts[] = {"1 Squad", "2 Squads", "3 Squads", "4 Squads", "5 Squads", "6 Squads", "7 Squads", "8 Squads", "9 Squads", "10 Squads (Default)", "11 Squads", "12 Squads", "13 Squads", "14 Squads", "15 Squads", "16 Squads", "17 Squads", "18 Squads", "19 Squads", "20 Squads"};
+            default = 10;
+        };
+        class A3A_tweak_siegeAutonomousSquads : ExtenderParams {
+            title = "Autonomous Siege Squads";
+            tooltip = "When enabled, deployed squads operate autonomously, moving toward the objective and defending or clearing nearby hostiles without player intervention.";
+            values[] = {0, 1};
+            texts[] = {"Disabled (Player Controlled)", "Enabled (Autonomous)"};
+            default = 1;
+        };
+        class A3A_tweak_siegeAddHC : ExtenderParams {
+            title = "Add Siege Squads to High Command";
+            tooltip = "When enabled, all deployed siege squads are assigned to the player's High Command upon spawning.";
+            values[] = {0, 1};
+            texts[] = {"Disabled (Independent)", "Enabled (High Command)"};
+            default = 0;
+        };
+        class A3A_tweak_siegeRefundOrGarrison : ExtenderParams {
+            title = "Capture Reward Action";
+            tooltip = "Choose whether surviving siege troops are garrisoned at the captured outpost, refunded to the faction database, or left under player control.";
+            values[] = {0, 1, 2};
+            texts[] = {"Disabled (No Action)", "Garrison Surviving Troops", "Refund Surviving Troops (Money & HR)"};
+            default = 1;
+        };
+        class A3A_tweak_siegeTravelTimeMultiplier : ExtenderParams {
+            title = "Siege Travel Time";
+            tooltip = "Multiplier applied to the travel time for siege squads to reach their staging points.";
+            values[] = {0, 0.1, 0.25, 0.5, 1, 2};
+            texts[] = {"Instant", "10x Faster", "4x Faster", "2x Faster", "Default", "2x Slower"};
+            default = 1;
         };
     };
 };

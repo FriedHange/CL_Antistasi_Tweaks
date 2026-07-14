@@ -1,0 +1,243 @@
+/*
+    fn_planning_init.sqf
+    Initializes global variables, states, and background execution loops for the Siege & Attack Planning system.
+    Supports target selection, multiple deployment entry points, and recruitment queues.
+*/
+
+if (isNil "A3A_planning_initDone") then {
+    A3A_planning_initDone = true;
+
+    // Reworked State Variables
+    A3A_planning_objective = "";                 // Selected target zone marker
+    A3A_planning_entryPoints = [];               // List of active entry point names (e.g. ["Alpha", "Beta"])
+    A3A_planning_sharedEntry = true;             // Whether all squads share a single entry point
+    A3A_planning_selectedSharedEntry = "Alpha";  // Selected shared entry point name
+    A3A_planning_queue = [];                     // Recruitment queue of squads: [_squadType, _idFormat, _special, _money, _hr, _vehType, _displayName, _assignedEntryName]
+    A3A_planning_assaultStarted = false;         // Assault state for progressive capture loop compatibility
+    A3A_planning_activeGroups = [];              // Track deployed groups for refund/garrison
+    
+    // UI Helpers
+    A3A_planning_includeVehicle = true;          // Checkbox state for including vehicles
+    A3A_planning_selectedSquadIndex = 0;         // Selected squad type index (0-10)
+    A3A_planning_selectedSquadEntry = "Alpha";   // Target entry point for the currently selected squad when not shared
+    A3A_planning_selectedStagingToMove = "";     // Currently selected staging point name for movement
+
+    diag_log "[A3A Ultimate Tweaks Extender] Siege Planning system initialized.";
+
+    // Run progressive sector control loop and helper tasks on server
+    if (isServer) then {
+        [] spawn A3A_fnc_planning_sectorControl;
+        
+        A3A_fnc_planning_serverDeductGarage = {
+            params ["_vehicles"];
+            {
+                private _idx = vehInGarage find _x;
+                if (_idx != -1) then {
+                    vehInGarage deleteAt _idx;
+                };
+            } forEach _vehicles;
+            publicVariable "vehInGarage";
+        };
+
+        A3A_fnc_planning_serverAddGarage = {
+            params ["_vehicles"];
+            {
+                if (_x != "") then {
+                    vehInGarage pushBack _x;
+                };
+            } forEach _vehicles;
+            publicVariable "vehInGarage";
+        };
+    };
+
+};
+
+// Client-side native stacked event handler for map clicks
+A3A_fnc_planning_onMapClick = {
+    params ["_pos"];
+    
+    private _display = findDisplay 60000;
+    if (isNull _display) exitWith {};
+
+    diag_log format ["[A3A Planning MapClick] Clicked at pos: %1, MapMode: %2", _pos, A3A_planning_mapMode];
+
+
+    if (!isNil "A3A_planning_mapMode" && {A3A_planning_mapMode != ""}) then {
+        if (A3A_planning_mapMode == "TARGET") then {
+            private _validTargets = outposts + airportsX + resourcesX + factories + seaports + milbases;
+            private _marker = [_validTargets, _pos] call BIS_fnc_nearestPosition;
+            if (getMarkerPos _marker distance2D _pos < 800) then {
+                private _side = sidesX getVariable [_marker, sideUnknown];
+                if (_side == Occupants || _side == Invaders) then {
+                    A3A_planning_objective = _marker;
+                    private _name = markerText ("Dum" + _marker);
+                    if (_name == "") then { _name = _marker; };
+                    ["Target Selected", format ["Objective set to %1.", _name], false] call A3A_fnc_planning_showNotification;
+                    A3A_planning_mapMode = ""; // Clear mode
+                    
+                    // Remove stacked handler
+                    ["A3A_planning_mapClick", "onMapSingleClick"] call BIS_fnc_removeStackedEventHandler;
+                    
+                    [_display] call A3A_fnc_planning_ui;
+                } else {
+                    ["Target Selection Failed", "You must select an enemy-controlled outpost, roadblock, or base.", true] call A3A_fnc_planning_showNotification;
+                };
+            } else {
+                ["Target Selection Failed", "No enemy objective close to click location.", true] call A3A_fnc_planning_showNotification;
+            };
+        };
+        
+        if (A3A_planning_mapMode in ["STAGING", "STAGING_ADD", "STAGING_MOVE", "STAGING_DELETE"]) then {
+            // Deselect High Command groups to prevent issuing accidental orders or selection conflicts
+            player hcSelectGroup [];
+
+            if (A3A_planning_mapMode == "STAGING_DELETE") exitWith {
+                private _nearestMarker = "";
+                private _nearestDist = 250;
+                {
+                    private _mName = "A3A_planning_entry_" + _x;
+                    if (_mName in allMapMarkers) then {
+                        private _dist = getMarkerPos _mName distance2D _pos;
+                        if (_dist < _nearestDist) then {
+                            _nearestDist = _dist;
+                            _nearestMarker = _x;
+                        };
+                    };
+                } forEach A3A_planning_entryPoints;
+
+                if (_nearestMarker != "") then {
+                    private _mName = "A3A_planning_entry_" + _nearestMarker;
+                    deleteMarkerLocal _mName;
+
+                    A3A_planning_entryPoints = A3A_planning_entryPoints - [_nearestMarker];
+
+                    private _cleanedQueue = [];
+                    {
+                        if ((_x select 7) != _nearestMarker) then {
+                            _cleanedQueue pushBack _x;
+                        };
+                    } forEach A3A_planning_queue;
+                    A3A_planning_queue = _cleanedQueue;
+
+                    ["Staging Removed", format ["Removed staging point %1 and cleared any queued squads assigned to it.", _nearestMarker], false] call A3A_fnc_planning_showNotification;
+                    A3A_planning_mapMode = "";
+
+                    ["A3A_planning_mapClick", "onMapSingleClick"] call BIS_fnc_removeStackedEventHandler;
+                    onMapSingleClick "";
+
+                    [_display] call A3A_fnc_planning_ui;
+                } else {
+                    ["Selection Failed", "No staging point found within 250m of click.", true] call A3A_fnc_planning_showNotification;
+                };
+            };
+
+            private _nearEnemy = false;
+            private _nearMarkerName = "";
+            {
+                private _side = sidesX getVariable [_x, sideUnknown];
+                if (_side == Occupants || _side == Invaders) then {
+                    if (getMarkerPos _x distance2D _pos < 300) exitWith {
+                        _nearEnemy = true;
+                        _nearMarkerName = markerText ("Dum" + _x);
+                        if (_nearMarkerName == "") then { _nearMarkerName = _x; };
+                    };
+                };
+            } forEach (outposts + airportsX + resourcesX + factories + seaports + milbases);
+
+            if (_nearEnemy) exitWith {
+                ["Placement Blocked", format ["You cannot set a staging area within 300m of enemy territory (%1).", _nearMarkerName], true] call A3A_fnc_planning_showNotification;
+            };
+
+            if (A3A_planning_mapMode == "STAGING_ADD") then {
+                private _allNames = ["Alpha", "Beta", "Gamma", "Delta"];
+                private _nextName = "";
+                {
+                    if !(_x in A3A_planning_entryPoints) exitWith { _nextName = _x; };
+                } forEach _allNames;
+
+                if (_nextName != "") then {
+                    A3A_planning_entryPoints pushBack _nextName;
+                    private _mName = "A3A_planning_entry_" + _nextName;
+                    private _m = createMarkerLocal [_mName, _pos];
+                    _m setMarkerTypeLocal "mil_start";
+                    _m setMarkerColorLocal "ColorGreen";
+                    _m setMarkerTextLocal ("Staging: " + _nextName);
+                    ["Staging Area Added", format ["Staging point %1 registered.", _nextName], false] call A3A_fnc_planning_showNotification;
+                } else {
+                    ["Limit Reached", "You can have a maximum of 4 staging markers. Use Move Staging mode to relocate one.", true] call A3A_fnc_planning_showNotification;
+                };
+            };
+
+            if (A3A_planning_mapMode == "STAGING_MOVE") then {
+                if (isNil "A3A_planning_selectedStagingToMove") then { A3A_planning_selectedStagingToMove = ""; };
+
+                if (A3A_planning_selectedStagingToMove == "") then {
+                    // Step 1: Select marker to move. Check within 250m radius.
+                    private _nearestMarker = "";
+                    private _nearestDist = 250;
+                    {
+                        private _mName = "A3A_planning_entry_" + _x;
+                        if (_mName in allMapMarkers) then {
+                            private _dist = getMarkerPos _mName distance2D _pos;
+                            if (_dist < _nearestDist) then {
+                                _nearestDist = _dist;
+                                _nearestMarker = _x;
+                            };
+                        };
+                    } forEach A3A_planning_entryPoints;
+
+                    if (_nearestMarker != "") then {
+                        A3A_planning_selectedStagingToMove = _nearestMarker;
+                        ("A3A_planning_entry_" + _nearestMarker) setMarkerColorLocal "ColorYellow";
+                        ["Staging Selected", format ["Selected staging point %1. Click anywhere on the map to move it.", _nearestMarker], false] call A3A_fnc_planning_showNotification;
+                    } else {
+                        ["Selection Failed", "No staging point found within 250m of click.", true] call A3A_fnc_planning_showNotification;
+                    };
+                } else {
+                    // Step 2: Reposition the selected marker.
+                    private _mName = "A3A_planning_entry_" + A3A_planning_selectedStagingToMove;
+                    if (_mName in allMapMarkers) then {
+                        _mName setMarkerPos _pos;
+                        _mName setMarkerColorLocal "ColorGreen";
+                        ["Staging Area Moved", format ["Moved %1 to new location.", A3A_planning_selectedStagingToMove], false] call A3A_fnc_planning_showNotification;
+                    };
+                    A3A_planning_selectedStagingToMove = "";
+                };
+            };
+
+            // Legacy STAGING mode (for compatibility or fallback)
+            if (A3A_planning_mapMode == "STAGING") then {
+                private _moved = false;
+                {
+                    private _mName = "A3A_planning_entry_" + _x;
+                    if (getMarkerPos _mName distance2D _pos < 250) exitWith {
+                        _mName setMarkerPos _pos;
+                        _moved = true;
+                        ["Staging Area Moved", format ["Moved %1 to new location.", _x], false] call A3A_fnc_planning_showNotification;
+                    };
+                } forEach A3A_planning_entryPoints;
+
+                if (!_moved) then {
+                    private _allNames = ["Alpha", "Beta", "Gamma", "Delta"];
+                    private _nextName = "";
+                    {
+                        if !(_x in A3A_planning_entryPoints) exitWith { _nextName = _x; };
+                    } forEach _allNames;
+
+                    if (_nextName != "") then {
+                        A3A_planning_entryPoints pushBack _nextName;
+                        private _mName = "A3A_planning_entry_" + _nextName;
+                        private _m = createMarkerLocal [_mName, _pos];
+                        _m setMarkerTypeLocal "mil_start";
+                        _m setMarkerColorLocal "ColorGreen";
+                        _m setMarkerTextLocal ("Staging: " + _nextName);
+                        ["Staging Area Added", format ["Staging point %1 registered.", _nextName], false] call A3A_fnc_planning_showNotification;
+                    } else {
+                        ["Limit Reached", "You can have a maximum of 4 staging markers. Click near one to move it.", true] call A3A_fnc_planning_showNotification;
+                    };
+                };
+            };
+            [_display] call A3A_fnc_planning_ui;
+        };
+    };
+};
