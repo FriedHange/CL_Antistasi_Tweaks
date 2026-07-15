@@ -28,6 +28,39 @@ if (isNil "A3A_planning_initDone") then {
     if (isServer) then {
         [] spawn A3A_fnc_planning_sectorControl;
         
+        A3A_fnc_planning_getAssaultAnchor = {
+            // Finds the nearest currently-active ASSAULT (plain infantry) group to a target position,
+            // and whether it has moved meaningfully from its spawn point yet.
+            // Returns [_hasAdvanced, _anchorPos, _anchorDist]. _anchorDist is -1 if there is no
+            // infantry group in this siege (e.g. a vehicle/support-only deployment).
+            params ["_targetPos"];
+            private _anchorPos = [];
+            private _anchorDist = -1;
+            private _hasAdvanced = false;
+            private _bestDist = 1e9;
+            if (!isNil "A3A_planning_activeGroups") then {
+                {
+                    if (!isNull _x && {(_x getVariable ["siege_role", "ASSAULT"]) == "ASSAULT"} && {count (units _x) > 0}) then {
+                        private _ldr = leader _x;
+                        if (alive _ldr) then {
+                            private _curPos = getPosATL _ldr;
+                            private _d = _curPos distance2D _targetPos;
+                            if (_d < _bestDist) then {
+                                _bestDist = _d;
+                                _anchorPos = _curPos;
+                                _anchorDist = _d;
+                                private _spawnPos = _x getVariable ["siege_spawnPos", []];
+                                _hasAdvanced = if (count _spawnPos == 3) then {
+                                    (_curPos distance2D _spawnPos) > 20
+                                } else { true };
+                            };
+                        };
+                    };
+                } forEach A3A_planning_activeGroups;
+            };
+            [_hasAdvanced, _anchorPos, _anchorDist]
+        };
+
         A3A_fnc_planning_serverDeductGarage = {
             params ["_vehicles"];
             {

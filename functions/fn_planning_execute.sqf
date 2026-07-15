@@ -244,8 +244,22 @@ if (_mode == "DEPLOY") then {
             private _timeout = time + 10;
             waitUntil {sleep 0.1; ({alive _x} count (units _group) == count _unitTypes) || {time > _timeout}};
 
-            private _grpIdName = _idFormat + str ({side (leader _x) == teamPlayer} count allGroups);
             _group setGroupIdGlobal [_grpIdName];
+
+            // Tag this group's battlefield role so vehicle/support AI can find the infantry element,
+            // and so we know which groups are safe to hand to the player's High Command.
+            private _roleTag = switch (_special) do {
+                case "MG";
+                case "MG_FALLBACK": { "MG" };
+                case "Mortar";
+                case "Mortar_FALLBACK": { "MORTAR" };
+                case "VehicleSquad";
+                case "BuildAA": { "VEHICLE" };
+                case "GarageCrew": { "CREW" };
+                default { "ASSAULT" };
+            };
+            _group setVariable ["siege_role", _roleTag, true];
+            _group setVariable ["siege_spawnPos", _spawnPos, true];
 
             // Initialize units
             { [_x] call A3A_fnc_FIAinit } forEach (units _group);
@@ -315,8 +329,11 @@ if (_mode == "DEPLOY") then {
                 _group setFormation "LINE";
             };
 
-            // Assign group to player's High Command if requested
-            if (_addHC && {_clientOwnerID > 0}) then {
+            // Assign group to player's High Command if requested — never do this for support/vehicle
+            // elements, since HC's own default combat AI would otherwise fight the scripted overwatch/
+            // support-AI logic for control of the group (this was the main cause of MG/Mortar teams
+            // acting like ordinary riflemen instead of holding their support role).
+            if (_addHC && {_clientOwnerID > 0} && {_roleTag in ["ASSAULT", "CREW"]}) then {
                 [_group] remoteExec ["A3A_fnc_planning_localAddHC", _clientOwnerID];
             };
 

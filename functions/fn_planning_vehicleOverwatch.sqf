@@ -1,8 +1,8 @@
 /*
     fn_planning_vehicleOverwatch.sqf
     Handles armed vehicle (Technical/AT/AA/APC/Tank) fire-support behavior.
-    Instead of driving into the objective, the vehicle holds at a stand-off distance
-    and engages defenders from range, relocating if threatened or if the fight moves on.
+    Waits for the assaulting infantry to begin advancing, then holds behind/alongside them
+    at a stand-off distance rather than leading the assault, engaging defenders from range.
     Runs on the server.
 */
 
@@ -25,16 +25,12 @@ if (count (units _group) == 0) exitWith {
     diag_log format ["[A3A Ultimate Tweaks Extender] Vehicle Overwatch aborted: sync failed for group %1.", _group];
 };
 
-// Take full control of the group's orders now that specialized overwatch AI is active.
-// Clear the fallback HOLD waypoint from spawn so it can never later compete with
-// the standoff positioning managed by this loop.
 for "_i" from (count (waypoints _group) - 1) to 0 step -1 do {
     deleteWaypoint [_group, _i];
 };
 
 diag_log format ["[A3A Ultimate Tweaks Extender] Vehicle Overwatch started for group: %1, Vehicle: %2", groupID _group, typeOf _vehicle];
 
-// Stand-off distances by armor class - lighter vehicles need to stay further out to survive
 private _idealDist  = 320;
 private _minDist    = 120;
 private _maxDist    = 500;
@@ -48,8 +44,28 @@ if (_vehicle isKindOf "Tank") then {
     };
 };
 
+// How far behind the leading infantry (along the infantry-to-objective line) the vehicle
+// tries to hold, so it never becomes the spearhead of the assault.
+private _followBehind = 90;
+
+_group setBehaviour "AWARE";
+_group setCombatMode "RED";
+
+// --- 0. Hold at the staging point until the infantry assault has actually begun ---
+private _holdTimeout = time + 90;
+private _hasAdvanced = false;
+while {!_hasAdvanced && {time < _holdTimeout}} do {
+    if (!alive _vehicle || {{alive _x} count (units _group) == 0}) exitWith {};
+    if ((sidesX getVariable [_targetMarker, sideUnknown]) == teamPlayer) exitWith {};
+    ([_targetPos] call A3A_fnc_planning_getAssaultAnchor) params ["_advanced", "_anchorPos", "_anchorDist"];
+    if (_anchorDist < 0) exitWith { _hasAdvanced = true; }; // No infantry in this siege at all
+    if (_advanced) exitWith { _hasAdvanced = true; };
+    sleep 3;
+};
+
 private _currentDist = _idealDist;
 private _lastContactTime = time;
+private _lastAnchorDist = -1;
 private _done = false;
 
 while {!_done} do {
@@ -57,19 +73,29 @@ while {!_done} do {
     if (!alive _vehicle || {{alive _x} count (units _group) == 0}) exitWith { _done = true; };
     if ((sidesX getVariable [_targetMarker, sideUnknown]) == teamPlayer) exitWith { _done = true; };
 
-    // --- 1. Move to standoff position ---
-    private _stagingPos = getPosATL _vehicle;
-    private _dir = _stagingPos vectorFromTo _targetPos;
-    private _distToTarget = _stagingPos distance2D _targetPos;
+    // --- 1. Decide where to hold: behind/alongside the leading infantry element if one exists ---
+    ([_targetPos] call A3A_fnc_planning_getAssaultAnchor) params ["_advanced2", "_anchorPos", "_anchorDist"];
 
+    private _stagingPos = getPosATL _vehicle;
     private _deployPos = _targetPos;
-    if (_distToTarget > _currentDist) then {
-        _deployPos = _targetPos vectorAdd (_dir vectorMultiply -_currentDist);
-        private _safePos = [_deployPos, 0, 60, 5, 0, 0.7, 0] call BIS_fnc_findSafePos;
-        if (count _safePos == 2) then { _deployPos = [_safePos # 0, _safePos # 1, 0]; };
+
+    if (_anchorDist >= 0) then {
+        _lastAnchorDist = _anchorDist;
+        private _vehDistToTarget = ((_anchorDist + _followBehind) max _minDist) min _maxDist;
+        private _dir = _targetPos vectorFromTo _anchorPos; // points from target out through the infantry
+        if (_dir isEqualTo [0,0,0]) then { _dir = (_stagingPos vectorFromTo _targetPos) vectorMultiply -1; };
+        _deployPos = _targetPos vectorAdd (_dir vectorMultiply _vehDistToTarget);
+    } else {
+        private _dir = _stagingPos vectorFromTo _targetPos;
+        private _distToTarget = _stagingPos distance2D _targetPos;
+        if (_distToTarget > _currentDist) then {
+            _deployPos = _targetPos vectorAdd (_dir vectorMultiply -_currentDist);
+        };
     };
 
-    // Clear any previous relocation waypoint so orders never stack up and compete
+    private _safePos = [_deployPos, 0, 60, 5, 0, 0.7, 0] call BIS_fnc_findSafePos;
+    if (count _safePos == 2) then { _deployPos = [_safePos # 0, _safePos # 1, 0]; };
+
     for "_i" from (count (waypoints _group) - 1) to 0 step -1 do {
         deleteWaypoint [_group, _i];
     };
@@ -112,34 +138,40 @@ while {!_done} do {
         while {alive _vehicle && {{alive _x} count (units _group) > 0} && {!_relocate}} do {
             if ((sidesX getVariable [_targetMarker, sideUnknown]) == teamPlayer) exitWith { _done = true; };
 
-            // Self-preservation: is anything closing in on us specifically?
             private _threatsNearUs = { alive _x && {side _x in [Occupants, Invaders]} && {_x distance2D (getPosATL _vehicle) < _dangerDist} } count allUnits;
 
             if (_threatsNearUs > 0) then {
                 _relocate = true;
                 _currentDist = (_currentDist + 150) min _maxDist;
             } else {
-                private _targetsNearAO = allUnits select { alive _x && {side _x in [Occupants, Invaders]} && {_x distance2D _targetPos < 400} };
-                private _gunner = gunner _vehicle;
-
-                if (count _targetsNearAO > 0) then {
-                    _lastContactTime = time;
-                    if (!isNull _gunner) then {
-                        private _closest = _targetsNearAO select 0;
-                        private _closestDist = 1e9;
-                        {
-                            private _d = _x distance2D (getPosATL _vehicle);
-                            if (_d < _closestDist) then { _closestDist = _d; _closest = _x; };
-                        } forEach _targetsNearAO;
-                        [_gunner, getPosATL _closest] remoteExec ["A3A_fnc_planning_localDoWatch", owner _gunner];
-                    };
+                // Follow check: reposition if the infantry has meaningfully advanced or fallen back,
+                // so the vehicle keeps station relative to them instead of camping in one spot.
+                ([_targetPos] call A3A_fnc_planning_getAssaultAnchor) params ["_advanced3", "_anchorPos2", "_anchorDist2"];
+                if (_anchorDist2 >= 0 && {_lastAnchorDist >= 0} && {abs (_anchorDist2 - _lastAnchorDist) > 80}) then {
+                    _relocate = true;
                 } else {
-                    if (!isNull _gunner) then {
-                        [_gunner, _targetPos] remoteExec ["A3A_fnc_planning_localDoWatch", owner _gunner];
-                    };
-                    if (time - _lastContactTime > 45 && {_currentDist > _minDist}) then {
-                        _relocate = true;
-                        _currentDist = (_currentDist - 150) max _minDist;
+                    private _targetsNearAO = allUnits select { alive _x && {side _x in [Occupants, Invaders]} && {_x distance2D _targetPos < 400} };
+                    private _gunner = gunner _vehicle;
+
+                    if (count _targetsNearAO > 0) then {
+                        _lastContactTime = time;
+                        if (!isNull _gunner) then {
+                            private _closest = _targetsNearAO select 0;
+                            private _closestDist = 1e9;
+                            {
+                                private _d = _x distance2D (getPosATL _vehicle);
+                                if (_d < _closestDist) then { _closestDist = _d; _closest = _x; };
+                            } forEach _targetsNearAO;
+                            [_gunner, getPosATL _closest] remoteExec ["A3A_fnc_planning_localDoWatch", owner _gunner];
+                        };
+                    } else {
+                        if (!isNull _gunner) then {
+                            [_gunner, _targetPos] remoteExec ["A3A_fnc_planning_localDoWatch", owner _gunner];
+                        };
+                        if (time - _lastContactTime > 45 && {_currentDist > _minDist}) then {
+                            _relocate = true;
+                            _currentDist = (_currentDist - 150) max _minDist;
+                        };
                     };
                 };
             };

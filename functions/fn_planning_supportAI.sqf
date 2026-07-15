@@ -38,17 +38,8 @@ for "_i" from (count (waypoints _group) - 1) to 0 step -1 do {
     deleteWaypoint [_group, _i];
 };
 
-diag_log format ["[A3A Ultimate Tweaks Extender] Support AI started for group: %1, Type: %2", groupID _group, _type];
-
 private _isMortar = _type in ["Mortar", "Mortar_FALLBACK"];
 private _sidePrefix = if (teamPlayer == west) then { "B" } else { if (teamPlayer == east) then { "O" } else { "I" } };
-
-// Effective standoff ranges. Mortars sit well back for indirect fire, MGs need LOS at closer range.
-private _idealDist    = if (_isMortar) then { 700 } else { 150 };
-private _minDist      = if (_isMortar) then { 400 } else { 60  };
-private _maxDist       = if (_isMortar) then { 900 } else { 300 };
-private _dangerDist    = if (_isMortar) then { 300 } else { 50  };  // Fall back if enemies reach this close to US
-private _quietTimeout   = 45;                                       // Creep closer if no contacts near the AO for this long
 
 // Resolve the static weapon classname. Checks every entry in the faction's configured list
 // (not just the first) so modded factions with a partially-invalid list still work correctly.
@@ -77,7 +68,32 @@ if (_staticClass == "" || {!isClass (configFile >> "CfgVehicles" >> _staticClass
     diag_log "[A3A Ultimate Tweaks Extender] Support AI failed: no valid static classname found (vanilla or modded).";
 };
 
-diag_log format ["[A3A Ultimate Tweaks Extender] Support group %1 resolved static class: %2", groupID _group, _staticClass];
+// How much further back than the infantry the support team tries to sit, on top of its own
+// effective range, so it never ends up in front of (or level with) the assault element.
+private _followBuffer = if (_isMortar) then { 150 } else { 60 };
+
+// --- Hold at the staging point until the infantry assault has actually begun ---
+private _holdTimeout = time + 90;
+private _hasAdvanced = false;
+while {!_hasAdvanced && {time < _holdTimeout}} do {
+    if (!alive (leader _group) || {count (units _group) == 0}) exitWith {};
+    if ((sidesX getVariable [_targetMarker, sideUnknown]) == teamPlayer) exitWith {};
+    ([_targetPos] call A3A_fnc_planning_getAssaultAnchor) params ["_advanced", "_anchorPos", "_anchorDist"];
+    if (_anchorDist < 0) exitWith { _hasAdvanced = true; };
+    if (_advanced) exitWith { _hasAdvanced = true; };
+    sleep 3;
+};
+
+private _lastAnchorDist = -1;
+
+diag_log format ["[A3A Ultimate Tweaks Extender] Support AI started for group: %1, Type: %2", groupID _group, _type];
+
+// Effective standoff ranges. Mortars sit well back for indirect fire, MGs need LOS at closer range.
+private _idealDist    = if (_isMortar) then { 700 } else { 150 };
+private _minDist      = if (_isMortar) then { 400 } else { 60  };
+private _maxDist       = if (_isMortar) then { 900 } else { 300 };
+private _dangerDist    = if (_isMortar) then { 300 } else { 50  };  // Fall back if enemies reach this close to US
+private _quietTimeout   = 45;                                       // Creep closer if no contacts near the AO for this long
 
 private _lastFireTime = 0;
 private _currentDist = _idealDist;
@@ -99,17 +115,25 @@ while {!_done} do {
 
     private _leader = leader _group;
 
-    // --- 1. Move to standoff positioning distance ---
-    private _stagingPos = getPosATL _leader;
-    private _dir = _stagingPos vectorFromTo _targetPos;
-    private _distToTarget = _stagingPos distance2D _targetPos;
+    // --- 1. Move to standoff positioning distance, biased behind the infantry if tracked ---
+    ([_targetPos] call A3A_fnc_planning_getAssaultAnchor) params ["_advancedX", "_anchorPos", "_anchorDist"];
 
-    private _deployPos = _targetPos;
-    if (_distToTarget > _currentDist) then {
-        _deployPos = _targetPos vectorAdd (_dir vectorMultiply -_currentDist);
-        private _safePos = [_deployPos, 0, 40, 3, 0, 0.7, 0] call BIS_fnc_findSafePos;
-        if (count _safePos == 2) then { _deployPos = [_safePos # 0, _safePos # 1, 0]; };
+    private _stagingPos = getPosATL _leader;
+    private _effectiveDist = _currentDist;
+    private _dir = _stagingPos vectorFromTo _targetPos;
+
+    if (_anchorDist >= 0) then {
+        _lastAnchorDist = _anchorDist;
+        if (_anchorDist + _followBuffer > _effectiveDist) then {
+            _effectiveDist = (_anchorDist + _followBuffer) min _maxDist;
+        };
+        _dir = _targetPos vectorFromTo _anchorPos;
+        if (_dir isEqualTo [0,0,0]) then { _dir = (_stagingPos vectorFromTo _targetPos) vectorMultiply -1; };
     };
+
+    private _deployPos = _targetPos vectorAdd (_dir vectorMultiply _effectiveDist);
+    private _safePos = [_deployPos, 0, 40, 3, 0, 0.7, 0] call BIS_fnc_findSafePos;
+    if (count _safePos == 2) then { _deployPos = [_safePos # 0, _safePos # 1, 0]; };
 
     // Clear any previous relocation waypoint so orders never stack up and compete
     for "_i" from (count (waypoints _group) - 1) to 0 step -1 do {
@@ -171,39 +195,45 @@ while {!_done} do {
                 _relocate = true;
                 _currentDist = (_currentDist + 150) min _maxDist;
             } else {
-                // Suppression targets: enemies actually defending the objective
-                private _targetsNearAO = allUnits select { alive _x && {side _x in [Occupants, Invaders]} && {_x distance2D _targetPos < 350} };
-
-                if (count _targetsNearAO > 0) then {
-                    _lastContactTime = time;
-
-                    if (_isMortar && {time - _lastFireTime > 25}) then {
-                        _lastFireTime = time;
-                        private _target = selectRandom _targetsNearAO;
-                        private _mags = magazines _staticVeh;
-                        if (count _mags > 0) then {
-                            [_staticVeh, getPosATL _target, _mags # 0, 3] remoteExec ["A3A_fnc_planning_localArtilleryFire", owner _staticVeh];
-                        };
-                    };
-
-                    if (!_isMortar && {!isNull _watcher}) then {
-                        private _closest = _targetsNearAO select 0;
-                        private _closestDist = 1e9;
-                        {
-                            private _d = _x distance2D (getPosATL _staticVeh);
-                            if (_d < _closestDist) then { _closestDist = _d; _closest = _x; };
-                        } forEach _targetsNearAO;
-                        [_watcher, getPosATL _closest] remoteExec ["A3A_fnc_planning_localDoWatch", owner _watcher];
-                    };
+                ([_targetPos] call A3A_fnc_planning_getAssaultAnchor) params ["_advancedY", "_anchorPosY", "_anchorDistY"];
+                if (_anchorDistY >= 0 && {_lastAnchorDist >= 0} && {abs (_anchorDistY - _lastAnchorDist) > 100}) then {
+                    _relocate = true;
+                    _lastAnchorDist = _anchorDistY;
                 } else {
-                    if (!_isMortar && {!isNull _watcher}) then {
-                        [_watcher, _targetPos] remoteExec ["A3A_fnc_planning_localDoWatch", owner _watcher];
-                    };
+                    // Suppression targets: enemies actually defending the objective
+                    private _targetsNearAO = allUnits select { alive _x && {side _x in [Occupants, Invaders]} && {_x distance2D _targetPos < 350} };
 
-                    // Quiet for too long - the fight likely moved on. Creep closer to stay useful.
-                    if (time - _lastContactTime > _quietTimeout && {_currentDist > _minDist}) then {
-                        _relocate = true;
-                        _currentDist = (_currentDist - 150) max _minDist;
+                    if (count _targetsNearAO > 0) then {
+                        _lastContactTime = time;
+
+                        if (_isMortar && {time - _lastFireTime > 25}) then {
+                            _lastFireTime = time;
+                            private _target = selectRandom _targetsNearAO;
+                            private _mags = magazines _staticVeh;
+                            if (count _mags > 0) then {
+                                [_staticVeh, getPosATL _target, _mags # 0, 3] remoteExec ["A3A_fnc_planning_localArtilleryFire", owner _staticVeh];
+                            };
+                        };
+
+                        if (!_isMortar && {!isNull _watcher}) then {
+                            private _closest = _targetsNearAO select 0;
+                            private _closestDist = 1e9;
+                            {
+                                private _d = _x distance2D (getPosATL _staticVeh);
+                                if (_d < _closestDist) then { _closestDist = _d; _closest = _x; };
+                            } forEach _targetsNearAO;
+                            [_watcher, getPosATL _closest] remoteExec ["A3A_fnc_planning_localDoWatch", owner _watcher];
+                        };
+                    } else {
+                        if (!_isMortar && {!isNull _watcher}) then {
+                            [_watcher, _targetPos] remoteExec ["A3A_fnc_planning_localDoWatch", owner _watcher];
+                        };
+
+                        // Quiet for too long - the fight likely moved on. Creep closer to stay useful.
+                        if (time - _lastContactTime > _quietTimeout && {_currentDist > _minDist}) then {
+                            _relocate = true;
+                            _currentDist = (_currentDist - 150) max _minDist;
+                        };
                     };
                 };
             };
