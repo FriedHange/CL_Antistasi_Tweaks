@@ -132,11 +132,22 @@ while {true} do {
             private _aliveGroups = A3A_planning_activeGroups select { !isNull _x && {count (units _x) > 0} };
             private _autoCapture = missionNamespace getVariable ["A3A_planning_autoCapture", true];
 
+            // Only ASSAULT (and vehicle CREW) squads are ever eligible to physically walk onto and
+            // seize the flag. Support elements (MG/Mortar emplacement teams and armed VehicleSquad
+            // overwatch) must stay on their scripted standoff behavior and are never pulled off
+            // station to rush the objective — pulling from the full _aliveGroups list here was
+            // causing random support squads to receive a raw MOVE waypoint straight onto the flag,
+            // and letting the objective get "captured" (and the siege reset) the moment a support
+            // group happened to be geometrically closest, well before it had done its job.
+            private _captureEligibleGroups = _aliveGroups select {
+                (_x getVariable ["siege_role", "ASSAULT"]) in ["ASSAULT", "CREW"]
+            };
+
             if (_autoCapture && {_totalEnemies == 0}) then {
-                // All enemies within 150m are eliminated! Get nearest surviving group
-                if (count _aliveGroups > 0) then {
+                // All enemies within 150m are eliminated! Get nearest surviving eligible group
+                if (count _captureEligibleGroups > 0) then {
                     // Find group closest to the flag
-                    private _sortedGroups = [_aliveGroups, [], { (leader _x) distance2D _targetPos }, "ASCEND"] call BIS_fnc_sortBy;
+                    private _sortedGroups = [_captureEligibleGroups, [], { (leader _x) distance2D _targetPos }, "ASCEND"] call BIS_fnc_sortBy;
                     private _closestGroup = _sortedGroups select 0;
                     
                     // Order them to move directly to the flag position
