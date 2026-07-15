@@ -143,7 +143,9 @@ if (isServer) then {
 			["A3A_tweak_siegeAutonomousSquads", 1],
 			["A3A_tweak_siegeAddHC", 0],
 			["A3A_tweak_siegeRefundOrGarrison", 1],
-			["A3A_tweak_siegeTravelTimeMultiplier", 1]
+			["A3A_tweak_siegeTravelTimeMultiplier", 1],
+			["A3A_tweak_mortarFFRadius", 40],
+			["A3A_tweak_mortarAORadius", 600]
 		];
 	};
 

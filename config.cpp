@@ -230,6 +230,20 @@ class A3A {
             texts[] = {"Instant", "10x Faster", "4x Faster", "2x Faster", "Default", "2x Slower"};
             default = 1;
         };
+        class A3A_tweak_mortarFFRadius : ExtenderParams {
+            title = "Mortar Friendly Fire Safety Radius";
+            tooltip = "Minimum distance (in meters) required between friendly units and a mortar impact point before the fire mission is authorized.";
+            values[] = {20, 30, 40, 50, 75, 100};
+            texts[] = {"20m", "30m", "40m (Default)", "50m", "75m", "100m"};
+            default = 40;
+        };
+        class A3A_tweak_mortarAORadius : ExtenderParams {
+            title = "Mortar AO Target Radius";
+            tooltip = "Radius (in meters) around the active siege objective within which enemy units are considered valid mortar targets.";
+            values[] = {300, 400, 600, 800, 1000};
+            texts[] = {"300m", "400m", "600m (Default)", "800m", "1000m"};
+            default = 600;
+        };
     };
 };
 

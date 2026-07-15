@@ -204,15 +204,38 @@ if (_mode == "DEPLOY") then {
         [_garageVehiclesToDeduct] call A3A_fnc_planning_serverDeductGarage;
     };
 
-    // Spawning logic function
     private _spawnSquadDirect = {
         params ["_unitTypes", "_idFormat", "_special", "_vehType", "_spawnPos", "_targetPos", "_addHC", "_clientOwnerID"];
+
+        // Declared locally so it's always in scope no matter which call stack
+        // _spawnSquadDirect ends up executing on (spawn does NOT inherit private
+        // variables from the scope it was written in, only from explicit params).
+        private _fnc_ensureThreadStarted = {
+            params ["_startCode", "_label"];
+            private _attempt = 0;
+            private _maxAttempts = 3;
+            private _started = false;
+            while {!_started && {_attempt < _maxAttempts}} do {
+                _attempt = _attempt + 1;
+                private _handle = call _startCode;
+                sleep 0.3;
+                if (!isNull _handle && {!scriptDone _handle}) then {
+                    _started = true;
+                } else {
+                    diag_log format ["[A3A Planning Warning] Support AI thread '%1' failed to start (attempt %2/%3). Retrying...", _label, _attempt, _maxAttempts];
+                };
+            };
+            if (!_started) then {
+                diag_log format ["[A3A Planning Error] Support AI thread '%1' failed to start after %2 attempts. Group left on its HOLD waypoint (will not assault).", _label, _maxAttempts];
+            };
+            _started
+        };
 
         private _group = groupNull;
         private _vehicle = objNull;
 
+        // --- STAGE 1: Creation only. Nothing here decides waypoints/behavior. ---
         try {
-            // Create vehicle if specified
             if (_vehType != "" && {isClass (configFile >> "CfgVehicles" >> _vehType)}) then {
                 diag_log format ["[A3A Planning] Spawning vehicle %1 at %2...", _vehType, _spawnPos];
                 _vehicle = createVehicle [_vehType, _spawnPos, [], 10, "NONE"];
@@ -223,7 +246,6 @@ if (_mode == "DEPLOY") then {
                 };
             };
 
-            // Create the squad group
             diag_log format ["[A3A Planning] Spawning squad group %1 units: %2...", _idFormat, _unitTypes];
             _group = [_spawnPos, teamPlayer, _unitTypes, true] call A3A_fnc_spawnGroup;
             if (isNull _group) then {
@@ -241,34 +263,60 @@ if (_mode == "DEPLOY") then {
                 };
             };
 
-            if (isNull _group || {count (units _group) == 0}) exitWith {
-                diag_log "[A3A Planning Error] Both spawnGroup and manual fallback failed to produce any active group.";
-                groupNull
+            if (!isNull _group) then {
+                private _timeout = time + 10;
+                waitUntil {sleep 0.1; ({alive _x} count (units _group) == count _unitTypes) || {time > _timeout}};
+                _group setGroupIdGlobal [_idFormat];
+                { [_x] call A3A_fnc_FIAinit } forEach (units _group);
             };
+        } catch {
+            diag_log format ["[A3A Planning Exception] Group/vehicle creation failed for squad: %1. Error: %2", _idFormat, _exception];
+        };
 
-            private _timeout = time + 10;
-            waitUntil {sleep 0.1; ({alive _x} count (units _group) == count _unitTypes) || {time > _timeout}};
+        if (isNull _group || {count (units _group) == 0}) exitWith {
+            diag_log "[A3A Planning Error] Both spawnGroup and manual fallback failed to produce any active group.";
+            groupNull
+        };
 
-            _group setGroupIdGlobal [_idFormat];
+        // --- STAGE 2: Classify and lock in waypoint/behavior FIRST, before any risky
+        // crew-assignment code runs. This is the only place a support role is decided,
+        // and it happens unconditionally as soon as the group exists - a later failure
+        // in crew assignment (Stage 3) can no longer suppress it or leave the group
+        // defaulting to assault behavior. ---
+        private _roleTag = switch (_special) do {
+            case "MG";
+            case "MG_FALLBACK": { "MG" };
+            case "Mortar";
+            case "Mortar_FALLBACK": { "MORTAR" };
+            case "VehicleSquad";
+            case "BuildAA": { "VEHICLE" };
+            case "GarageCrew": { "CREW" };
+            default { "ASSAULT" };
+        };
+        _group setVariable ["siege_role", _roleTag, true];
+        _group setVariable ["siege_spawnPos", _spawnPos, true];
 
-            // Tag this group's battlefield role so vehicle/support AI can find the infantry element,
-            // and so we know which groups are safe to hand to the player's High Command.
-            private _roleTag = switch (_special) do {
-                case "MG";
-                case "MG_FALLBACK": { "MG" };
-                case "Mortar";
-                case "Mortar_FALLBACK": { "MORTAR" };
-                case "VehicleSquad";
-                case "BuildAA": { "VEHICLE" };
-                case "GarageCrew": { "CREW" };
-                default { "ASSAULT" };
-            };
-            _group setVariable ["siege_role", _roleTag, true];
-            _group setVariable ["siege_spawnPos", _spawnPos, true];
+        private _isSupportElement = _special in ["MG", "Mortar", "MG_FALLBACK", "Mortar_FALLBACK", "VehicleSquad"];
 
-            // Initialize units
-            { [_x] call A3A_fnc_FIAinit } forEach (units _group);
+        if (_isSupportElement) then {
+            private _wp = _group addWaypoint [_spawnPos, 0];
+            _wp setWaypointType "HOLD";
+            _group setBehaviour "AWARE";
+            _group setCombatMode "YELLOW";
+            _group setSpeedMode "NORMAL";
+        } else {
+            private _wp = _group addWaypoint [_targetPos, 0];
+            _wp setWaypointType "SAD";
+            _group setBehaviour "AWARE";
+            _group setCombatMode "RED";
+            _group setSpeedMode "NORMAL";
+        };
 
+        // --- STAGE 3: Crew assignment / vehicle mounting. Isolated in its own
+        // try/catch so a failure here (moveInDriver/moveInGunner/fullCrew races,
+        // bad indexing, etc.) can NEVER roll back or skip the waypoint/behavior
+        // already committed in Stage 2 above. ---
+        try {
             // MG and Mortar weapon bag override system (only for fallback squads)
             if (_special in ["MG_FALLBACK", "Mortar_FALLBACK"]) then {
                 [_group, _special] spawn {
@@ -334,15 +382,11 @@ if (_mode == "DEPLOY") then {
                 _group setFormation "LINE";
             };
 
-            // Assign group to player's High Command if requested — never do this for support/vehicle
-            // elements, since HC's own default combat AI would otherwise fight the scripted overwatch/
-            // support-AI logic for control of the group (this was the main cause of MG/Mortar teams
-            // acting like ordinary riflemen instead of holding their support role).
+            // Assign group to player's High Command if requested
             if (_addHC && {_clientOwnerID > 0} && {_roleTag in ["ASSAULT", "CREW"]}) then {
                 [_group] remoteExec ["A3A_fnc_planning_localAddHC", _clientOwnerID];
             };
 
-            // Specific vehicle and squad role configurations
             private _countUnits = count (units _group) - 1;
 
             private _initVeh = {
@@ -392,46 +436,27 @@ if (_mode == "DEPLOY") then {
                     call _initInfVeh;
                 };
             };
+        } catch {
+            diag_log format ["[A3A Planning Exception] Crew assignment failed for squad: %1 (role: %2). Error: %3. Waypoint/behavior already committed in Stage 2, so this squad will still hold/support correctly - it may just be missing its vehicle seat.", _idFormat, _roleTag, _exception];
+        };
 
-            // Support elements (MG/Mortar teams and armed vehicles) must NEVER receive an
-            // aggressive Search-And-Destroy order. SAD makes the AI autonomously push toward
-            // and engage the objective on its own initiative -- which is precisely the
-            // "driving straight into the base" behavior these units should never exhibit,
-            // and it can fire before the specialized threads below finish their sync checks.
-            // Instead, support elements are held passively at their spawn point until the
-            // specialized thread establishes full control of their positioning and fire.
-            //
-            // Only plain assault squads keep the guaranteed SAD fallback, so they're never
-            // left idle when no specialized behavior applies to them.
-            private _isSupportElement = (_special in ["MG", "Mortar", "MG_FALLBACK", "Mortar_FALLBACK"]) || {_special == "VehicleSquad" && {!isNull _vehicle}};
-
-            if (_isSupportElement) then {
-                private _wp = _group addWaypoint [_spawnPos, 0];
-                _wp setWaypointType "HOLD";
-                _group setBehaviour "AWARE";
-                _group setCombatMode "YELLOW";
-                _group setSpeedMode "NORMAL";
-            } else {
-                private _wp = _group addWaypoint [_targetPos, 0];
-                _wp setWaypointType "SAD";
-                _group setBehaviour "AWARE";
-                _group setCombatMode "RED";
-                _group setSpeedMode "NORMAL";
-            };
-
-            if (_special in ["MG", "Mortar", "MG_FALLBACK", "Mortar_FALLBACK"]) then {
-                // Emplacement teams: move to a support position, assemble, and provide suppressive/indirect fire
-                [_group, _special, A3A_planning_objective, _targetPos] spawn A3A_fnc_planning_supportAI;
-            } else {
-                if (_special == "VehicleSquad" && {!isNull _vehicle}) then {
-                    // Armed vehicles (Technicals, AA, APCs, Tanks): hold at a stand-off distance
-                    // and engage from range instead of assaulting straight into the objective
-                    [_group, _vehicle, A3A_planning_objective, _targetPos] spawn A3A_fnc_planning_vehicleOverwatch;
+        // --- STAGE 4: Dispatch the support-AI thread, with verified retry. ---
+        if (_special in ["MG", "Mortar", "MG_FALLBACK", "Mortar_FALLBACK"]) then {
+            [
+                { [_group, _special, A3A_planning_objective, _targetPos] spawn A3A_fnc_planning_supportAI },
+                _idFormat
+            ] call _fnc_ensureThreadStarted;
+        } else {
+            if (_special == "VehicleSquad") then {
+                if (!isNull _vehicle) then {
+                    [
+                        { [_group, _vehicle, A3A_planning_objective, _targetPos] spawn A3A_fnc_planning_vehicleOverwatch },
+                        _idFormat
+                    ] call _fnc_ensureThreadStarted;
+                } else {
+                    diag_log format ["[A3A Planning Error] VehicleSquad %1 has no valid vehicle - holding crew defensively on its HOLD waypoint instead of assaulting.", _idFormat];
                 };
             };
-
-        } catch {
-            diag_log format ["[A3A Planning Exception] Spawning failed for squad: %1. Error: %2", _idFormat, _exception];
         };
 
         _group
