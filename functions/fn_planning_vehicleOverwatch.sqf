@@ -52,15 +52,23 @@ _group setBehaviour "AWARE";
 _group setCombatMode "RED";
 
 // --- 0. Hold at the staging point until the infantry assault has actually begun ---
-private _holdTimeout = time + 90;
+// Phase 1: Wait up to 3 min for assault groups to appear AND begin advancing.
+// If _anchorDist is still -1 after the full timeout, this is a support/vehicle-only
+// deployment — proceed without waiting for infantry.
+private _holdTimeout = time + 180;
 private _hasAdvanced = false;
 while {!_hasAdvanced && {time < _holdTimeout}} do {
     if (!alive _vehicle || {{alive _x} count (units _group) == 0}) exitWith {};
     if ((sidesX getVariable [_targetMarker, sideUnknown]) == teamPlayer) exitWith {};
     ([_targetPos] call A3A_fnc_planning_getAssaultAnchor) params ["_advanced", "_anchorPos", "_anchorDist"];
-    if (_anchorDist < 0) exitWith { _hasAdvanced = true; }; // No infantry in this siege at all
+    // _anchorDist < 0 means no assault groups are registered yet; keep waiting
     if (_advanced) exitWith { _hasAdvanced = true; };
-    sleep 3;
+    sleep 5;
+};
+// After timeout: if no assault groups were ever found, proceed (vehicle/support-only deployment).
+if (!_hasAdvanced) then {
+    ([_targetPos] call A3A_fnc_planning_getAssaultAnchor) params ["_advancedFinal", "_anchorPosFinal", "_anchorDistFinal"];
+    if (_anchorDistFinal < 0) then { _hasAdvanced = true; };
 };
 
 private _currentDist = _idealDist;

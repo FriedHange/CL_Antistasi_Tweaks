@@ -582,7 +582,7 @@ if (A3A_planning_objective != "") then {
         } else {
             private _m = createMarkerLocal [_aoMarker, _targetPos];
             _m setMarkerShapeLocal "ELLIPSE";
-            _m setMarkerSizeLocal [300, 300];
+            _m setMarkerSizeLocal [500, 500];
             _m setMarkerColorLocal "ColorRed";
             _m setMarkerBrushLocal "GRID";
         };

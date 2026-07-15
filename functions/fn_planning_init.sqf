@@ -169,7 +169,7 @@ A3A_fnc_planning_onMapClick = {
             {
                 private _side = sidesX getVariable [_x, sideUnknown];
                 if (_side == Occupants || _side == Invaders) then {
-                    if (getMarkerPos _x distance2D _pos < 300) exitWith {
+                    if (getMarkerPos _x distance2D _pos < 500) exitWith {
                         _nearEnemy = true;
                         _nearMarkerName = markerText ("Dum" + _x);
                         if (_nearMarkerName == "") then { _nearMarkerName = _x; };
@@ -178,7 +178,7 @@ A3A_fnc_planning_onMapClick = {
             } forEach (outposts + airportsX + resourcesX + factories + seaports + milbases);
 
             if (_nearEnemy) exitWith {
-                ["Placement Blocked", format ["You cannot set a staging area within 300m of enemy territory (%1).", _nearMarkerName], true] call A3A_fnc_planning_showNotification;
+                ["Placement Blocked", format ["You cannot set a staging area within 500m of enemy territory (%1).", _nearMarkerName], true] call A3A_fnc_planning_showNotification;
             };
 
             if (A3A_planning_mapMode == "STAGING_ADD") then {

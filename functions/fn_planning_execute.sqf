@@ -113,8 +113,8 @@ if (_mode == "DEPLOY") then {
         diag_log format ["[A3A Planning Warning] Custom assets missing/invalid for squads: %1. Spawning vanilla fallbacks.", _failedNames];
     };
 
-    // --- SQUAD DEPLOYMENT SPACING SYSTEM (PRE-CALCULATE UNIQUE POSITIONS) ---
     private _allocatedPositions = createHashMap;
+    private _idCounters = createHashMap;
     private _validatedQueue = [];
 
     {
@@ -171,8 +171,13 @@ if (_mode == "DEPLOY") then {
         _alreadyAllocated pushBack _spawnPos;
         _allocatedPositions set [_entryName, _alreadyAllocated];
 
+        // Build a unique, complete group name (e.g. "Squd-1", "Mortar-2")
+        private _counter = (_idCounters getOrDefault [_idFormat, 0]) + 1;
+        _idCounters set [_idFormat, _counter];
+        private _groupName = _idFormat + str _counter;
+
         // Push squad with its pre-allocated spawn position to the deployment queue
-        _validatedQueue pushBack [_unitTypes, _idFormat, _special, _costMoney, _costHR, _vehType, _displayName, _entryName, _spawnPos];
+        _validatedQueue pushBack [_unitTypes, _groupName, _special, _costMoney, _costHR, _vehType, _displayName, _entryName, _spawnPos];
     } forEach _fallbackQueue;
 
     // Calculate total cost (using the validated queue)
@@ -201,7 +206,7 @@ if (_mode == "DEPLOY") then {
 
     // Spawning logic function
     private _spawnSquadDirect = {
-        params ["_unitTypes", "_idFormat", "_special", "_vehType", "_spawnPos", "_targetPos"];
+        params ["_unitTypes", "_idFormat", "_special", "_vehType", "_spawnPos", "_targetPos", "_addHC", "_clientOwnerID"];
 
         private _group = groupNull;
         private _vehicle = objNull;
@@ -400,13 +405,14 @@ if (_mode == "DEPLOY") then {
             // left idle when no specialized behavior applies to them.
             private _isSupportElement = (_special in ["MG", "Mortar", "MG_FALLBACK", "Mortar_FALLBACK"]) || {_special == "VehicleSquad" && {!isNull _vehicle}};
 
-            private _wp = _group addWaypoint [_targetPos, 0];
             if (_isSupportElement) then {
+                private _wp = _group addWaypoint [_spawnPos, 0];
                 _wp setWaypointType "HOLD";
                 _group setBehaviour "AWARE";
                 _group setCombatMode "YELLOW";
                 _group setSpeedMode "NORMAL";
             } else {
+                private _wp = _group addWaypoint [_targetPos, 0];
                 _wp setWaypointType "SAD";
                 _group setBehaviour "AWARE";
                 _group setCombatMode "RED";
@@ -463,8 +469,8 @@ if (_mode == "DEPLOY") then {
         };
 
         // Spawn a thread to track travel simulation
-        [_unitTypes, _idFormat, _special, _vehType, _entryPos, _targetPos, _travelTime, _displayName, _entryName, _spawnSquadDirect, _distance, _costMoney, _costHR, _spawnPos] spawn {
-            params ["_unitTypes", "_idFormat", "_special", "_vehType", "_entryPos", "_targetPos", "_travelTime", "_displayName", "_entryName", "_spawnSquadDirect", "_distance", "_costMoney", "_costHR", "_spawnPos"];
+        [_unitTypes, _idFormat, _special, _vehType, _entryPos, _targetPos, _travelTime, _displayName, _entryName, _spawnSquadDirect, _distance, _costMoney, _costHR, _spawnPos, _addHC, _clientOwnerID] spawn {
+            params ["_unitTypes", "_idFormat", "_special", "_vehType", "_entryPos", "_targetPos", "_travelTime", "_displayName", "_entryName", "_spawnSquadDirect", "_distance", "_costMoney", "_costHR", "_spawnPos", "_addHC", "_clientOwnerID"];
 
             if (_travelTime > 0) then {
                 // Radio departure report
@@ -480,7 +486,7 @@ if (_mode == "DEPLOY") then {
             };
 
             // Spawn the group safely at pre-allocated position
-            private _group = [_unitTypes, _idFormat, _special, _vehType, _spawnPos, _targetPos] call _spawnSquadDirect;
+            private _group = [_unitTypes, _idFormat, _special, _vehType, _spawnPos, _targetPos, _addHC, _clientOwnerID] call _spawnSquadDirect;
             
             if (!isNull _group) then {
                 // Set tracking variables on group

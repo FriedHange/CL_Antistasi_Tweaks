@@ -1,7 +1,7 @@
 /*
     fn_planning_sectorControl.sqf
     Runs on the server. Periodically monitors the active attack objective.
-    If all enemy forces within 250m are eliminated and auto-capture is enabled,
+    If all enemy forces within 150m are eliminated and auto-capture is enabled,
     orders the nearest surviving squad to move to the central flag to seize the position.
     Once a friendly unit reaches the flag (within 15m), triggers the native Antistasi capture event (A3A_fnc_markerChange)
     and converts all surviving units into the persistent garrison for that location.
@@ -126,14 +126,14 @@ while {true} do {
         } else {
             // --- SCENARIO B: Assault in progress (enemies still own the position) ---
 
-            // Count remaining enemy defenders within the AO (250m)
-            private _totalEnemies = { alive _x && {side _x == Occupants || {side _x == Invaders}} && {_x distance2D _targetPos < 250} } count allUnits;
+            // Count remaining enemy defenders within the AO (150m)
+            private _totalEnemies = { alive _x && {side _x == Occupants || {side _x == Invaders}} && {_x distance2D _targetPos < 150} } count allUnits;
             
             private _aliveGroups = A3A_planning_activeGroups select { !isNull _x && {count (units _x) > 0} };
             private _autoCapture = missionNamespace getVariable ["A3A_planning_autoCapture", true];
 
             if (_autoCapture && {_totalEnemies == 0}) then {
-                // All enemies within 250m are eliminated! Get nearest surviving group
+                // All enemies within 150m are eliminated! Get nearest surviving group
                 if (count _aliveGroups > 0) then {
                     // Find group closest to the flag
                     private _sortedGroups = [_aliveGroups, [], { (leader _x) distance2D _targetPos }, "ASCEND"] call BIS_fnc_sortBy;

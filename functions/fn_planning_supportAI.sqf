@@ -73,15 +73,25 @@ if (_staticClass == "" || {!isClass (configFile >> "CfgVehicles" >> _staticClass
 private _followBuffer = if (_isMortar) then { 150 } else { 60 };
 
 // --- Hold at the staging point until the infantry assault has actually begun ---
-private _holdTimeout = time + 90;
+// Phase 1: Wait up to 3 min for assault groups to appear AND begin advancing.
+// If at any point _anchorDist >= 0, assault groups have been registered; we then
+// wait for _advanced to be true (infantry moved >20m from spawn).
+// If _anchorDist is still -1 after the full timeout, this is a support/vehicle-only
+// deployment — proceed immediately.
+private _holdTimeout = time + 180;
 private _hasAdvanced = false;
 while {!_hasAdvanced && {time < _holdTimeout}} do {
     if (!alive (leader _group) || {count (units _group) == 0}) exitWith {};
     if ((sidesX getVariable [_targetMarker, sideUnknown]) == teamPlayer) exitWith {};
     ([_targetPos] call A3A_fnc_planning_getAssaultAnchor) params ["_advanced", "_anchorPos", "_anchorDist"];
-    if (_anchorDist < 0) exitWith { _hasAdvanced = true; };
     if (_advanced) exitWith { _hasAdvanced = true; };
-    sleep 3;
+    sleep 5;
+};
+// After timeout: if no assault groups were ever found, proceed as if infantry has advanced
+// (vehicle/support-only deployment — no infantry to wait for).
+if (!_hasAdvanced) then {
+    ([_targetPos] call A3A_fnc_planning_getAssaultAnchor) params ["_advancedFinal", "_anchorPosFinal", "_anchorDistFinal"];
+    if (_anchorDistFinal < 0) then { _hasAdvanced = true; };
 };
 
 private _lastAnchorDist = -1;
