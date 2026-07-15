@@ -545,8 +545,9 @@ if (isNull _controlsGroup) then {
         private _entryPositions = [];
         {
             private _mName = "A3A_planning_entry_" + _x;
-            if (_mName in allMapMarkers) then {
-                _entryPositions pushBack [_x, getMarkerPos _mName];
+            private _pos = getMarkerPos _mName;
+            if (_pos isNotEqualTo [0,0,0]) then {
+                _entryPositions pushBack [_x, _pos];
             };
         } forEach A3A_planning_entryPoints;
 

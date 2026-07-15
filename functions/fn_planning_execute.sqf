@@ -362,15 +362,22 @@ if (_mode == "DEPLOY") then {
                 };
             };
 
-            // Tactical Instruction: SAD waypoint to target
+            // Tactical Instruction: assign the appropriate post-arrival behavior for this squad type
             if (_special in ["MG", "Mortar", "MG_FALLBACK", "Mortar_FALLBACK"]) then {
+                // Emplacement teams: move to a support position, assemble, and provide suppressive/indirect fire
                 [_group, _special, A3A_planning_objective, _targetPos] spawn A3A_fnc_planning_supportAI;
             } else {
-                private _wp = _group addWaypoint [_targetPos, 0];
-                _wp setWaypointType "SAD";
-                _group setBehaviour "AWARE";
-                _group setCombatMode "RED";
-                _group setSpeedMode "NORMAL";
+                if (_special == "VehicleSquad" && {!isNull _vehicle} && {count (weapons _vehicle) > 0}) then {
+                    // Armed vehicles (Technicals, AA, APCs, Tanks): hold at a stand-off distance
+                    // and engage from range instead of assaulting straight into the objective
+                    [_group, _vehicle, A3A_planning_objective, _targetPos] spawn A3A_fnc_planning_vehicleOverwatch;
+                } else {
+                    private _wp = _group addWaypoint [_targetPos, 0];
+                    _wp setWaypointType "SAD";
+                    _group setBehaviour "AWARE";
+                    _group setCombatMode "RED";
+                    _group setSpeedMode "NORMAL";
+                };
             };
 
         } catch {
@@ -413,7 +420,7 @@ if (_mode == "DEPLOY") then {
 
         // Spawn a thread to track travel simulation
         [_unitTypes, _idFormat, _special, _vehType, _entryPos, _targetPos, _travelTime, _displayName, _entryName, _spawnSquadDirect, _distance, _costMoney, _costHR, _spawnPos] spawn {
-            params ["_unitTypes", "_idFormat", "_special", "_vehType", "_entryPos", "_targetPos", "_travelTime", "_displayName", "_entryName", "_spawnSquadDirect", "_distance", "_costMoney", "_costHR", _spawnPos];
+            params ["_unitTypes", "_idFormat", "_special", "_vehType", "_entryPos", "_targetPos", "_travelTime", "_displayName", "_entryName", "_spawnSquadDirect", "_distance", "_costMoney", "_costHR", "_spawnPos"];
 
             if (_travelTime > 0) then {
                 // Radio departure report

@@ -46,6 +46,7 @@ A3A_fnc_planning_ui = compile preprocessFileLineNumbers "\CL_Antistasi_Tweaks\fu
 A3A_fnc_planning_execute = compile preprocessFileLineNumbers "\CL_Antistasi_Tweaks\functions\fn_planning_execute.sqf";
 A3A_fnc_planning_sectorControl = compile preprocessFileLineNumbers "\CL_Antistasi_Tweaks\functions\fn_planning_sectorControl.sqf";
 A3A_fnc_planning_supportAI = compile preprocessFileLineNumbers "\CL_Antistasi_Tweaks\functions\fn_planning_supportAI.sqf";
+A3A_fnc_planning_vehicleOverwatch = compile preprocessFileLineNumbers "\CL_Antistasi_Tweaks\functions\fn_planning_vehicleOverwatch.sqf";
 A3A_fnc_planning_showNotification = compile preprocessFileLineNumbers "\CL_Antistasi_Tweaks\functions\fn_planning_showNotification.sqf";
 
 // Global locality wrappers for planning system
