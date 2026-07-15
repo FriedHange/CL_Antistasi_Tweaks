@@ -371,15 +371,30 @@ if (_mode == "DEPLOY") then {
                 };
             };
 
-            // Always give the group a guaranteed order immediately. Specialized AI
-            // (support/overwatch) takes over and replaces this once it establishes
-            // control, but if that thread aborts early (sync failure, vehicle destroyed
-            // on spawn, objective already captured, etc.) the group is never left idle.
+            // Support elements (MG/Mortar teams and armed vehicles) must NEVER receive an
+            // aggressive Search-And-Destroy order. SAD makes the AI autonomously push toward
+            // and engage the objective on its own initiative -- which is precisely the
+            // "driving straight into the base" behavior these units should never exhibit,
+            // and it can fire before the specialized threads below finish their sync checks.
+            // Instead, support elements are held passively at their spawn point until the
+            // specialized thread establishes full control of their positioning and fire.
+            //
+            // Only plain assault squads keep the guaranteed SAD fallback, so they're never
+            // left idle when no specialized behavior applies to them.
+            private _isSupportElement = (_special in ["MG", "Mortar", "MG_FALLBACK", "Mortar_FALLBACK"]) || {_special == "VehicleSquad" && {!isNull _vehicle}};
+
             private _wp = _group addWaypoint [_targetPos, 0];
-            _wp setWaypointType "SAD";
-            _group setBehaviour "AWARE";
-            _group setCombatMode "RED";
-            _group setSpeedMode "NORMAL";
+            if (_isSupportElement) then {
+                _wp setWaypointType "HOLD";
+                _group setBehaviour "AWARE";
+                _group setCombatMode "YELLOW";
+                _group setSpeedMode "NORMAL";
+            } else {
+                _wp setWaypointType "SAD";
+                _group setBehaviour "AWARE";
+                _group setCombatMode "RED";
+                _group setSpeedMode "NORMAL";
+            };
 
             if (_special in ["MG", "Mortar", "MG_FALLBACK", "Mortar_FALLBACK"]) then {
                 // Emplacement teams: move to a support position, assemble, and provide suppressive/indirect fire

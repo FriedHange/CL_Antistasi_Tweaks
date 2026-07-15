@@ -25,6 +25,13 @@ if (count (units _group) == 0) exitWith {
     diag_log format ["[A3A Ultimate Tweaks Extender] Vehicle Overwatch aborted: sync failed for group %1.", _group];
 };
 
+// Take full control of the group's orders now that specialized overwatch AI is active.
+// Clear the fallback HOLD waypoint from spawn so it can never later compete with
+// the standoff positioning managed by this loop.
+for "_i" from (count (waypoints _group) - 1) to 0 step -1 do {
+    deleteWaypoint [_group, _i];
+};
+
 diag_log format ["[A3A Ultimate Tweaks Extender] Vehicle Overwatch started for group: %1, Vehicle: %2", groupID _group, typeOf _vehicle];
 
 // Stand-off distances by armor class - lighter vehicles need to stay further out to survive
@@ -60,6 +67,11 @@ while {!_done} do {
         _deployPos = _targetPos vectorAdd (_dir vectorMultiply -_currentDist);
         private _safePos = [_deployPos, 0, 60, 5, 0, 0.7, 0] call BIS_fnc_findSafePos;
         if (count _safePos == 2) then { _deployPos = [_safePos # 0, _safePos # 1, 0]; };
+    };
+
+    // Clear any previous relocation waypoint so orders never stack up and compete
+    for "_i" from (count (waypoints _group) - 1) to 0 step -1 do {
+        deleteWaypoint [_group, _i];
     };
 
     private _wp = _group addWaypoint [_deployPos, 0];
