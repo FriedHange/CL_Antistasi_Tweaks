@@ -31,10 +31,17 @@ if (_staticClass == "" || {!isClass (configFile >> "CfgVehicles" >> _staticClass
 };
 
 // --- Event thresholds ---
-private _idealDist  = if (_isMortar) then {400} else {220};   // 150-300m MG / 250-600m Mortar
-private _maxDist    = if (_isMortar) then {600} else {300};   // "objective out of range"
-private _dangerDist = if (_isMortar) then {150} else {60};    // "position heavily threatened"
+// Mortars hang well back and provide sustained indirect fire; MG teams stay tight on the
+// heels of the advancing assault squads so they can keep contributing suppressive fire.
+private _idealDist  = if (_isMortar) then {500} else {100};   // Mortar ~500m behind frontline / MG ~100m behind frontline
+private _maxDist    = if (_isMortar) then {700} else {180};   // "frontline out of effective range"
+private _dangerDist = if (_isMortar) then {150} else {50};    // "position heavily threatened"
 private _originalCount = count (units _group);
+
+// MG teams shouldn't wait until they reach their full standoff distance if they run into the
+// enemy on the way there - if they already have LOS to a live target within this range while
+// still approaching, they stop and deploy on the spot instead of continuing to travel.
+private _earlyEngageRange = 250;
 
 private _fnc_rotateDir = {
     params ["_dir","_deg"];
@@ -47,25 +54,74 @@ private _fnc_hasLOS = {
     private _to = ATLToASL (_toPos vectorAdd [0,0,1.6]);
     (!terrainIntersectASL [_from,_to]) && {!lineIntersects [_from,_to,objNull,objNull]}
 };
-// Ring-search for a safe position at _dist from target that has LOS to it
+
+// Checks that a 2D/ATL ground position is actually usable: not water, not a steep slope,
+// and not sitting inside/on top of a building, rock, or other solid obstruction.
+private _fnc_isValidGroundPos = {
+    params ["_pos"];
+    if (_pos isEqualTo []) exitWith { false };
+    if (surfaceIsWater _pos) exitWith { false };
+    private _normal = surfaceNormal _pos;
+    // z-component of the surface normal is 1 on flat ground; reject anything steeper than ~35-40 degrees
+    if ((_normal select 2) < 0.78) exitWith { false };
+    private _blockers = (_pos nearObjects ["House", 4]) + (_pos nearObjects ["Building", 4]) + (_pos nearObjects ["Rocks", 4]) + (_pos nearObjects ["Rock", 4]);
+    if (count _blockers > 0) exitWith { false };
+    true
+};
+
+// Ring-search for a valid, navigable position at _dist from _biasFrom (offset further away from
+// _dirAnchor than _biasFrom is), that also has line of sight to _losTarget. Falls back through
+// progressively looser searches, but NEVER hands back an unvalidated/unreachable position --
+// a waypoint is only produced once a suitable spot has actually been found.
 private _fnc_findPos = {
-    params ["_targetPos","_biasFrom","_dist"];
-    private _dir = _targetPos vectorFromTo _biasFrom;
+    params ["_dirAnchor","_biasFrom","_dist","_losTarget"];
+    private _dir = _dirAnchor vectorFromTo _biasFrom;
     if (_dir isEqualTo [0,0,0]) then { _dir = [1,0,0]; };
+    private _angles = [0,-30,30,-60,60,-90,90,-120,120,150,-150,180];
     private _best = [];
+
+    // Pass 1: valid terrain + LOS to the battle
     {
         private _testDir = [_dir, _x] call _fnc_rotateDir;
-        private _cand = _targetPos vectorAdd (_testDir vectorMultiply _dist);
+        private _cand = _biasFrom vectorAdd (_testDir vectorMultiply _dist);
         private _safe = [_cand, 0, 40, 3, 0, 0.7, 0] call BIS_fnc_findSafePos;
         if (count _safe == 2) then {
             private _cPos = [_safe select 0, _safe select 1, 0];
-            if ([_cPos, _targetPos] call _fnc_hasLOS) exitWith { _best = _cPos; };
+            if ([_cPos] call _fnc_isValidGroundPos && {[_cPos, _losTarget] call _fnc_hasLOS}) exitWith { _best = _cPos; };
         };
-    } forEach [0,-30,30,-60,60,-90,90,-120,120,150,-150,180];
+    } forEach _angles;
+
+    // Pass 2: relax the LOS requirement but keep the terrain valid
     if (_best isEqualTo []) then {
-        private _safe = [_targetPos vectorAdd (_dir vectorMultiply _dist), 0, 60, 4, 0, 0.7, 0] call BIS_fnc_findSafePos;
-        _best = if (count _safe == 2) then { [_safe select 0, _safe select 1, 0] } else { _targetPos vectorAdd (_dir vectorMultiply _dist) };
+        {
+            private _testDir = [_dir, _x] call _fnc_rotateDir;
+            private _cand = _biasFrom vectorAdd (_testDir vectorMultiply _dist);
+            private _safe = [_cand, 0, 60, 4, 0, 0.7, 0] call BIS_fnc_findSafePos;
+            if (count _safe == 2) then {
+                private _cPos = [_safe select 0, _safe select 1, 0];
+                if ([_cPos] call _fnc_isValidGroundPos) exitWith { _best = _cPos; };
+            };
+        } forEach _angles;
     };
+
+    // Pass 3: expanding radius search around the bias point for any reachable, valid terrain
+    if (_best isEqualTo []) then {
+        private _radius = 60;
+        private _tries = 0;
+        while {_best isEqualTo [] && {_tries < 6}} do {
+            private _safe = [_biasFrom, 0, _radius, 4, 0, 0.7, 0] call BIS_fnc_findSafePos;
+            if (count _safe == 2) then {
+                private _cPos = [_safe select 0, _safe select 1, 0];
+                if ([_cPos] call _fnc_isValidGroundPos) then { _best = _cPos; };
+            };
+            _radius = _radius + 40;
+            _tries = _tries + 1;
+        };
+    };
+
+    // Last resort: hold at the bias point itself rather than leaving the group without any waypoint
+    if (_best isEqualTo [] && {[_biasFrom] call _fnc_isValidGroundPos}) then { _best = _biasFrom; };
+    if (_best isEqualTo []) then { _best = _biasFrom; };
     _best
 };
 
@@ -88,10 +144,12 @@ private _watcher = objNull;
 private _done = false;
 private _lastFireTime = 0;
 
-// Debounce counters - a relocation condition must persist across several checks (~10s apart)
-// before we actually pack up, so a single bad frame (someone walks past, momentary LOS blip)
-// doesn't tear down a perfectly good position.
-private _confirmNeeded = 3; // ~30s of sustained condition
+// Debounce counters - a relocation condition must persist across several checks before we
+// actually pack up, so a single bad frame (someone walks past, momentary LOS blip) doesn't
+// tear down a perfectly good position. Mortars get a longer debounce than MG teams since
+// their whole value is staying put and providing sustained fire; they were previously
+// repositioning far too readily.
+private _confirmNeeded = if (_isMortar) then {5} else {3}; // ~50s (mortar) / ~30s (MG) of sustained condition
 private _cRange = 0; private _cLOS = 0; private _cNoTargets = 0;
 
 while {!_done} do {
@@ -109,30 +167,53 @@ while {!_done} do {
     if (_curTargetPos distance2D [0,0,0] < 1) then { _curTargetPos = _targetPos; };
 
     // Bias the NEW position off the frontline (if the assault has started) so support follows
-    // the advancing infantry rather than always re-centering on the objective itself.
+    // the advancing infantry rather than always re-centering on the objective itself. The
+    // deploy position is placed _idealDist further BEHIND the frontline (i.e. further from the
+    // objective than the frontline anchor itself), not simply _idealDist from the objective.
     ([_curTargetPos] call _fnc_frontlinePos) params ["_biasPos","_haveBattlePoint"];
-    private _searchBias = if (_haveBattlePoint) then { _biasPos } else { _curTargetPos };
-    private _deployPos = [_curTargetPos, _searchBias, _idealDist] call _fnc_findPos;
+    private _searchAnchor = if (_haveBattlePoint) then { _biasPos } else { _curTargetPos };
+    private _deployPos = [_curTargetPos, _searchAnchor, _idealDist, _searchAnchor] call _fnc_findPos;
 
     // --- 1. Move to the support position ---
     for "_i" from (count (waypoints _group) - 1) to 0 step -1 do { deleteWaypoint [_group, _i]; };
     private _wp = _group addWaypoint [_deployPos, 0];
     _wp setWaypointType "MOVE";
+    _wp setWaypointCompletionRadius 50; // Don't force units to chase an exact pixel; settle nearby
     [_group, _wp select 1] remoteExec ["A3A_fnc_planning_localSetCurrentWaypoint", groupOwner _group];
     _group setBehaviour "AWARE"; _group setSpeedMode "NORMAL";
     { [_x, _deployPos] remoteExec ["A3A_fnc_planning_localDoMove", owner _x]; } forEach (units _group);
 
     private _reached = false;
+    private _earlyDeploy = false;
     private _moveTimeout = time + 120;
     while {true} do {
         if (!alive (leader _group) || {count (units _group) == 0}) exitWith { _done = true; };
         if ((sidesX getVariable [_targetMarker, sideUnknown]) == teamPlayer) exitWith { _done = true; };
         if ((leader _group) distance2D _deployPos < 25) exitWith { _reached = true; };
+
+        // MG teams (not mortars - they fire indirectly and gain nothing from stopping early):
+        // if the enemy is already visible and in range while still en route to the calculated
+        // standoff point, stop right here and deploy immediately rather than arriving late.
+        if (!_isMortar) then {
+            private _curLeaderPos = getPosATL (leader _group);
+            private _engageIdx = allUnits findIf {
+                alive _x && {side _x in [Occupants, Invaders]} && {_x distance2D _curLeaderPos < _earlyEngageRange} && {[_curLeaderPos, getPosATL _x] call _fnc_hasLOS}
+            };
+            if (_engageIdx != -1) exitWith { _reached = true; _earlyDeploy = true; };
+        };
+
         if (time > _moveTimeout) exitWith {};
-        sleep 5;
+        sleep 2;
     };
     if (_done) exitWith {};
     if (!_reached) then { continue; };
+
+    if (_earlyDeploy) then {
+        // Halt in place instead of continuing on to the further standoff position.
+        { doStop _x; } forEach (units _group);
+        for "_i" from (count (waypoints _group) - 1) to 0 step -1 do { deleteWaypoint [_group, _i]; };
+        diag_log format ["[A3A Tweaks] %1 stopping early to deploy - enemy contact during approach.", groupID _group];
+    };
 
     // --- 2. Assemble & occupy the emplacement ---
     _staticVeh = createVehicle [_staticClass, getPosATL (leader _group), [], 0, "NONE"];

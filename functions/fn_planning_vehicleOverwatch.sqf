@@ -8,9 +8,10 @@ if (count (units _group) == 0) exitWith {
 };
 for "_i" from (count (waypoints _group) - 1) to 0 step -1 do { deleteWaypoint [_group, _i]; };
 
-private _idealDist = 200; private _maxDist = 250; private _dangerDist = 120;
-if (_vehicle isKindOf "Tank") then { _idealDist = 220; _maxDist = 280; _dangerDist = 90; }
-else { if (_vehicle isKindOf "APC" || {_vehicle isKindOf "Wheeled_APC_F"}) then { _idealDist = 210; _maxDist = 260; _dangerDist = 100; }; };
+// Support vehicles (Technicals, AA, APCs, Tanks) all hold roughly the same standoff distance
+// behind the leading assault squads - close enough to keep the infantry in supporting range
+// without becoming the leading element of the attack.
+private _idealDist = 100; private _maxDist = 180; private _dangerDist = 50;
 
 _group setBehaviour "AWARE"; _group setCombatMode "RED";
 diag_log format ["[A3A Tweaks] Event-driven Vehicle Overwatch started for group: %1, Vehicle: %2", groupID _group, typeOf _vehicle];
@@ -26,24 +27,69 @@ private _fnc_hasLOS = {
     private _to = ATLToASL (_toPos vectorAdd [0,0,1.8]);
     (!terrainIntersectASL [_from,_to]) && {!lineIntersects [_from,_to,objNull,objNull]}
 };
+
+// Checks that a 2D/ATL ground position is actually usable for the vehicle: not water, not a
+// steep slope, and not sitting inside/on top of a building or rock.
+private _fnc_isValidGroundPos = {
+    params ["_pos"];
+    if (_pos isEqualTo []) exitWith { false };
+    if (surfaceIsWater _pos) exitWith { false };
+    private _normal = surfaceNormal _pos;
+    if ((_normal select 2) < 0.82) exitWith { false }; // vehicles need flatter ground than infantry
+    private _blockers = (_pos nearObjects ["House", 5]) + (_pos nearObjects ["Building", 5]) + (_pos nearObjects ["Rocks", 5]) + (_pos nearObjects ["Rock", 5]);
+    if (count _blockers > 0) exitWith { false };
+    true
+};
+
+// Ring-search for a valid, navigable position at _dist from _biasFrom (offset further away from
+// _dirAnchor than _biasFrom is), with line of sight to _losTarget. Progressively relaxes the
+// search but never returns an unvalidated spot - a waypoint is only assigned once a suitable
+// position has actually been found.
 private _fnc_findPos = {
-    params ["_targetPos","_biasFrom","_dist"];
-    private _dir = _targetPos vectorFromTo _biasFrom;
+    params ["_dirAnchor","_biasFrom","_dist","_losTarget"];
+    private _dir = _dirAnchor vectorFromTo _biasFrom;
     if (_dir isEqualTo [0,0,0]) then { _dir = [1,0,0]; };
+    private _angles = [0,-30,30,-60,60,-90,90,-120,120,150,-150,180];
     private _best = [];
+
     {
         private _testDir = [_dir, _x] call _fnc_rotateDir;
-        private _cand = _targetPos vectorAdd (_testDir vectorMultiply _dist);
+        private _cand = _biasFrom vectorAdd (_testDir vectorMultiply _dist);
         private _safe = [_cand, 0, 50, 5, 0, 0.7, 0] call BIS_fnc_findSafePos;
         if (count _safe == 2) then {
             private _cPos = [_safe select 0, _safe select 1, 0];
-            if ([_cPos, _targetPos] call _fnc_hasLOS) exitWith { _best = _cPos; };
+            if ([_cPos] call _fnc_isValidGroundPos && {[_cPos, _losTarget] call _fnc_hasLOS}) exitWith { _best = _cPos; };
         };
-    } forEach [0,-30,30,-60,60,-90,90,-120,120,150,-150,180];
+    } forEach _angles;
+
     if (_best isEqualTo []) then {
-        private _safe = [_targetPos vectorAdd (_dir vectorMultiply _dist), 0, 70, 5, 0, 0.7, 0] call BIS_fnc_findSafePos;
-        _best = if (count _safe == 2) then { [_safe select 0, _safe select 1, 0] } else { _targetPos vectorAdd (_dir vectorMultiply _dist) };
+        {
+            private _testDir = [_dir, _x] call _fnc_rotateDir;
+            private _cand = _biasFrom vectorAdd (_testDir vectorMultiply _dist);
+            private _safe = [_cand, 0, 70, 5, 0, 0.7, 0] call BIS_fnc_findSafePos;
+            if (count _safe == 2) then {
+                private _cPos = [_safe select 0, _safe select 1, 0];
+                if ([_cPos] call _fnc_isValidGroundPos) exitWith { _best = _cPos; };
+            };
+        } forEach _angles;
     };
+
+    if (_best isEqualTo []) then {
+        private _radius = 70;
+        private _tries = 0;
+        while {_best isEqualTo [] && {_tries < 6}} do {
+            private _safe = [_biasFrom, 0, _radius, 5, 0, 0.7, 0] call BIS_fnc_findSafePos;
+            if (count _safe == 2) then {
+                private _cPos = [_safe select 0, _safe select 1, 0];
+                if ([_cPos] call _fnc_isValidGroundPos) then { _best = _cPos; };
+            };
+            _radius = _radius + 50;
+            _tries = _tries + 1;
+        };
+    };
+
+    if (_best isEqualTo [] && {[_biasFrom] call _fnc_isValidGroundPos}) then { _best = _biasFrom; };
+    if (_best isEqualTo []) then { _best = _biasFrom; };
     _best
 };
 
@@ -69,21 +115,18 @@ while {!_done} do {
     private _curTgt = getMarkerPos _targetMarker;
     if (_curTgt distance2D [0,0,0] < 1) then { _curTgt = _targetPos; };
 
-    // Stage forward from behind the FRONTLINE, not straight at the objective - this keeps the
-    // vehicle out of the AO center while letting it advance in steps as the assault progresses.
+    // Stage the vehicle _idealDist further BEHIND the frontline than the frontline anchor
+    // itself (i.e. relative to the advancing infantry), never in front of them, and never
+    // simply measured from the objective marker.
     ([_curTgt] call _fnc_frontlinePos) params ["_frontPos","_haveBattlePoint"];
-    private _biasPoint = if (_haveBattlePoint) then { _frontPos } else { _curTgt };
-    // Deploy behind the frontline (further from the objective than the leading infantry),
-    // never in front of them.
-    private _dirBehind = _curTgt vectorFromTo _biasPoint;
-    if (_dirBehind isEqualTo [0,0,0]) then { _dirBehind = getPosATL _vehicle vectorFromTo _curTgt; };
-    private _standoffPoint = _biasPoint vectorAdd (_dirBehind vectorMultiply 40); // stay just behind them
-    private _deployPos = [_curTgt, _standoffPoint, _idealDist] call _fnc_findPos;
+    private _searchAnchor = if (_haveBattlePoint) then { _frontPos } else { _curTgt };
+    private _deployPos = [_curTgt, _searchAnchor, _idealDist, _searchAnchor] call _fnc_findPos;
 
     // --- 1. Move to position ---
     for "_i" from (count (waypoints _group) - 1) to 0 step -1 do { deleteWaypoint [_group, _i]; };
     private _wp = _group addWaypoint [_deployPos, 0];
     _wp setWaypointType "MOVE";
+    _wp setWaypointCompletionRadius 50; // Don't force the vehicle to chase an exact pixel; settle nearby
     [_group, _wp select 1] remoteExec ["A3A_fnc_planning_localSetCurrentWaypoint", groupOwner _group];
     _group setBehaviour "AWARE"; _group setCombatMode "RED"; _group setSpeedMode "NORMAL";
     { [_x, _deployPos] remoteExec ["A3A_fnc_planning_localDoMove", owner _x]; } forEach (units _group);
