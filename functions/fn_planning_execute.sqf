@@ -254,42 +254,51 @@ if (_mode == "DEPLOY") then {
             if (_special in ["MG_FALLBACK", "Mortar_FALLBACK"]) then {
                 [_group, _special] spawn {
                     params ["_group", "_special"];
-                    sleep 2;
-                    if (isNull _group) exitWith {};
-                    private _units = (units _group) select { alive _x };
-                    if (count _units >= 2) then {
-                        private _sidePrefix = if (teamPlayer == west) then { "B" } else { if (teamPlayer == east) then { "O" } else { "I" } };
-                        
-                        private _mgWeaponBag = _sidePrefix + "_HMG_01_weapon_F";
-                        private _mgSupportBag = _sidePrefix + "_HMG_01_support_F";
-                        if (!isClass (configFile >> "CfgVehicles" >> _mgWeaponBag)) then {
-                            _mgWeaponBag = "I_HMG_01_weapon_F";
-                            _mgSupportBag = "I_HMG_01_support_F";
-                        };
-
-                        private _mortarWeaponBag = _sidePrefix + "_Mortar_01_weapon_F";
-                        private _mortarSupportBag = _sidePrefix + "_Mortar_01_support_F";
-                        if (!isClass (configFile >> "CfgVehicles" >> _mortarWeaponBag)) then {
-                            _mortarWeaponBag = "I_Mortar_01_weapon_F";
-                            _mortarSupportBag = "I_Mortar_01_support_F";
-                        };
-
-                        private _unit1 = _units # 0;
-                        private _unit2 = _units # 1;
-
-                        removeBackpackGlobal _unit1;
-                        removeBackpackGlobal _unit2;
-
-                        if (_special == "MG_FALLBACK") then {
-                            _unit1 addBackpackGlobal _mgWeaponBag;
-                            _unit2 addBackpackGlobal _mgSupportBag;
-                        };
-                        if (_special == "Mortar_FALLBACK") then {
-                            _unit1 addBackpackGlobal _mortarWeaponBag;
-                            _unit2 addBackpackGlobal _mortarSupportBag;
-                        };
-                        diag_log format ["[A3A Ultimate Tweaks Extender] Equipped group %1 with %2 deployment bags.", groupID _group, _special];
+                    private _units = [];
+                    private _tries = 0;
+                    while {_tries < 10} do {
+                        if (isNull _group) exitWith {};
+                        _units = (units _group) select { alive _x };
+                        if (count _units >= 2) exitWith {};
+                        sleep 0.5;
+                        _tries = _tries + 1;
                     };
+                    if (isNull _group) exitWith {};
+                    if (count _units < 2) exitWith {
+                        diag_log format ["[A3A Planning Error] %1 squad %2 never reached 2 alive units for weapon-bag assignment (found %3 after retries). Squad failed to spawn correctly.", _special, groupID _group, count _units];
+                    };
+
+                    private _sidePrefix = if (teamPlayer == west) then { "B" } else { if (teamPlayer == east) then { "O" } else { "I" } };
+                    
+                    private _mgWeaponBag = _sidePrefix + "_HMG_01_weapon_F";
+                    private _mgSupportBag = _sidePrefix + "_HMG_01_support_F";
+                    if (!isClass (configFile >> "CfgVehicles" >> _mgWeaponBag)) then {
+                        _mgWeaponBag = "I_HMG_01_weapon_F";
+                        _mgSupportBag = "I_HMG_01_support_F";
+                    };
+
+                    private _mortarWeaponBag = _sidePrefix + "_Mortar_01_weapon_F";
+                    private _mortarSupportBag = _sidePrefix + "_Mortar_01_support_F";
+                    if (!isClass (configFile >> "CfgVehicles" >> _mortarWeaponBag)) then {
+                        _mortarWeaponBag = "I_Mortar_01_weapon_F";
+                        _mortarSupportBag = "I_Mortar_01_support_F";
+                    };
+
+                    private _unit1 = _units # 0;
+                    private _unit2 = _units # 1;
+
+                    removeBackpackGlobal _unit1;
+                    removeBackpackGlobal _unit2;
+
+                    if (_special == "MG_FALLBACK") then {
+                        _unit1 addBackpackGlobal _mgWeaponBag;
+                        _unit2 addBackpackGlobal _mgSupportBag;
+                    };
+                    if (_special == "Mortar_FALLBACK") then {
+                        _unit1 addBackpackGlobal _mortarWeaponBag;
+                        _unit2 addBackpackGlobal _mortarSupportBag;
+                    };
+                    diag_log format ["[A3A Ultimate Tweaks Extender] Equipped group %1 with %2 deployment bags.", groupID _group, _special];
                 };
             };
 
@@ -362,21 +371,24 @@ if (_mode == "DEPLOY") then {
                 };
             };
 
-            // Tactical Instruction: assign the appropriate post-arrival behavior for this squad type
+            // Always give the group a guaranteed order immediately. Specialized AI
+            // (support/overwatch) takes over and replaces this once it establishes
+            // control, but if that thread aborts early (sync failure, vehicle destroyed
+            // on spawn, objective already captured, etc.) the group is never left idle.
+            private _wp = _group addWaypoint [_targetPos, 0];
+            _wp setWaypointType "SAD";
+            _group setBehaviour "AWARE";
+            _group setCombatMode "RED";
+            _group setSpeedMode "NORMAL";
+
             if (_special in ["MG", "Mortar", "MG_FALLBACK", "Mortar_FALLBACK"]) then {
                 // Emplacement teams: move to a support position, assemble, and provide suppressive/indirect fire
                 [_group, _special, A3A_planning_objective, _targetPos] spawn A3A_fnc_planning_supportAI;
             } else {
-                if (_special == "VehicleSquad" && {!isNull _vehicle} && {count (weapons _vehicle) > 0}) then {
+                if (_special == "VehicleSquad" && {!isNull _vehicle}) then {
                     // Armed vehicles (Technicals, AA, APCs, Tanks): hold at a stand-off distance
                     // and engage from range instead of assaulting straight into the objective
                     [_group, _vehicle, A3A_planning_objective, _targetPos] spawn A3A_fnc_planning_vehicleOverwatch;
-                } else {
-                    private _wp = _group addWaypoint [_targetPos, 0];
-                    _wp setWaypointType "SAD";
-                    _group setBehaviour "AWARE";
-                    _group setCombatMode "RED";
-                    _group setSpeedMode "NORMAL";
                 };
             };
 

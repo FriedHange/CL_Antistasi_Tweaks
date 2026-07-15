@@ -58,10 +58,12 @@ A3A_fnc_planning_getSquadDetails = {
     private _displayName = "";
     private _vehType = "";
 
-    private _crewType = A3A_planning_cachedVehicles getOrDefault ["TRUCK", "I_G_Van_01_transport_F"]; // Safe default
+    private _crewType = "I_G_Soldier_F"; // Safe default must be a soldier classname, never a vehicle
     private _squadGroup = A3A_faction_reb getOrDefault ["groupSquad", []];
     if (count _squadGroup > 0) then { _crewType = _squadGroup # 0; };
-    if (isNil "_crewType" || {_crewType == ""}) then { _crewType = "I_G_Soldier_F"; };
+    if (isNil "_crewType" || {_crewType == "" || {!isClass (configFile >> "CfgVehicles" >> _crewType)}}) then {
+        _crewType = "I_G_Soldier_F";
+    };
 
     switch (_squadIndex) do {
         case 0: {
