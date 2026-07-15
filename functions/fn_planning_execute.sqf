@@ -244,7 +244,7 @@ if (_mode == "DEPLOY") then {
             private _timeout = time + 10;
             waitUntil {sleep 0.1; ({alive _x} count (units _group) == count _unitTypes) || {time > _timeout}};
 
-            _group setGroupIdGlobal [_grpIdName];
+            _group setGroupIdGlobal [_idFormat];
 
             // Tag this group's battlefield role so vehicle/support AI can find the infantry element,
             // and so we know which groups are safe to hand to the player's High Command.
