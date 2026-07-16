@@ -463,18 +463,18 @@ if (isNull _controlsGroup) then {
     }];
 
     // --- COSTS & COMMENCE ---
-    private _ctrlHCChk = _display ctrlCreate ["RscCheckBox", 8040, _controlsGroup];
-    _ctrlHCChk ctrlSetPosition [1 * _uW, 30 * _uH, 2 * _uW, 2 * _uH];
-    _ctrlHCChk ctrlSetFade 0;
-    _ctrlHCChk ctrlCommit 0;
-    _ctrlHCChk cbSetChecked true; // Default to checked
+    // private _ctrlHCChk = _display ctrlCreate ["RscCheckBox", 8040, _controlsGroup];
+    // _ctrlHCChk ctrlSetPosition [1 * _uW, 30 * _uH, 2 * _uW, 2 * _uH];
+    // _ctrlHCChk ctrlSetFade 0;
+    // _ctrlHCChk ctrlCommit 0;
+    // _ctrlHCChk cbSetChecked true; // Default to checked
 
-    private _ctrlHCLabel = _display ctrlCreate ["TextBase", 8041, _controlsGroup];
-    _ctrlHCLabel ctrlSetPosition [3.5 * _uW, 30 * _uH, 19.5 * _uW, 2 * _uH];
-    _ctrlHCLabel ctrlSetText "Add units to High Command";
-    _ctrlHCLabel ctrlSetFont "PuristaLight";
-    _ctrlHCLabel ctrlSetFade 0;
-    _ctrlHCLabel ctrlCommit 0;
+    // private _ctrlHCLabel = _display ctrlCreate ["TextBase", 8041, _controlsGroup];
+    // _ctrlHCLabel ctrlSetPosition [3.5 * _uW, 30 * _uH, 19.5 * _uW, 2 * _uH];
+    // _ctrlHCLabel ctrlSetText "Add units to High Command";
+    // _ctrlHCLabel ctrlSetFont "PuristaLight";
+    // _ctrlHCLabel ctrlSetFade 0;
+    // _ctrlHCLabel ctrlCommit 0;
 
     private _ctrlCapChk = _display ctrlCreate ["RscCheckBox", 8042, _controlsGroup];
     _ctrlCapChk ctrlSetPosition [1 * _uW, 32.5 * _uH, 2 * _uW, 2 * _uH];
