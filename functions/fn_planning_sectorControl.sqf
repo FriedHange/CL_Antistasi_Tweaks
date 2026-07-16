@@ -24,12 +24,9 @@ while {true} do {
 
         // --- SCENARIO A: Sector has already been captured (e.g., manually by player or other forces) ---
         if (_side == teamPlayer) then {
-            private _nearbyEnemies = { alive _x && {side _x in [Occupants, Invaders]} && {_x distance2D _targetPos < 500} } count allUnits;
-            if (_nearbyEnemies > 0) then {
-                // Captured but not secure yet - defenders stay put; re-check again next tick.
-            } else {
-                private _captureAction = missionNamespace getVariable ["A3A_tweak_siegeRefundOrGarrison", 1];
-                if (_captureAction > 0 && {!isNil "A3A_planning_activeGroups" && {count A3A_planning_activeGroups > 0}}) then {
+            private _captureAction = missionNamespace getVariable ["A3A_tweak_siegeRefundOrGarrison", 1];
+
+            if (_captureAction > 0 && {!isNil "A3A_planning_activeGroups" && {count A3A_planning_activeGroups > 0}}) then {
                 private _totalRefundMoney = 0;
                 private _totalRefundHR = 0;
                 private _totalGarrisonedCount = 0;
@@ -42,10 +39,10 @@ while {true} do {
                         private _costMoney = _group getVariable ["siege_costMoney", 0];
                         private _costHR = _group getVariable ["siege_costHR", 0];
                         private _originalCount = _group getVariable ["siege_originalCount", 0];
-                        
+
                         private _aliveUnits = (units _group) select { alive _x };
                         private _aliveCount = count _aliveUnits;
-                        
+
                         if (_aliveCount > 0 && {_originalCount > 0}) then {
                             private _groupVehicles = [];
                             {
@@ -63,9 +60,7 @@ while {true} do {
                                     };
                                 } forEach _aliveUnits;
 
-                                {
-                                    _allRecoveredVehicles pushBack (typeOf _x);
-                                } forEach _groupVehicles;
+                                { _allRecoveredVehicles pushBack (typeOf _x); } forEach _groupVehicles;
                             };
 
                             if (_captureAction == 2) then {
@@ -73,8 +68,7 @@ while {true} do {
                                 _totalRefundMoney = _totalRefundMoney + round (_costMoney * _ratio);
                                 _totalRefundHR = _totalRefundHR + round (_costHR * _ratio);
                             };
-                            
-                            // Clean up physical units/vehicles
+
                             { deleteVehicle _x; } forEach _groupVehicles;
                             { deleteVehicle _x; } forEach _aliveUnits;
                             deleteGroup _group;
@@ -82,12 +76,10 @@ while {true} do {
                     };
                 } forEach A3A_planning_activeGroups;
 
-                // Add recovered vehicles to HQ Garage
                 if (count _allRecoveredVehicles > 0) then {
                     [_allRecoveredVehicles] call A3A_fnc_planning_serverAddGarage;
                 };
 
-                // Apply manual capture garrisoning
                 if (_captureAction == 1 && {_totalGarrisonedCount > 0}) then {
                     private _currentGarrison = garrison getVariable [_marker, []];
                     _currentGarrison append _garrisonList;
@@ -108,7 +100,6 @@ while {true} do {
                     ] remoteExec ["A3A_fnc_customHint", 0];
                 };
 
-                // Apply manual capture refund
                 if (_captureAction == 2 && {(_totalRefundMoney > 0 || {_totalRefundHR > 0})}) then {
                     [_totalRefundHR, _totalRefundMoney] remoteExec ["A3A_fnc_resourcesFIA", 2];
                     [
@@ -116,19 +107,21 @@ while {true} do {
                         format ["Refunded %1 € and %2 HR for surviving siege troops at %3.", _totalRefundMoney, _totalRefundHR, markerText ("Dum" + _marker)]
                     ] remoteExec ["A3A_fnc_customHint", 0];
                 };
-                
+
                 A3A_planning_activeGroups = [];
                 publicVariable "A3A_planning_activeGroups";
             };
 
+            // Runs unconditionally the instant the flag is seen flipped, regardless of the
+            // selected cleanup option (or even if there were no surviving groups to process).
             A3A_planning_objective = "";
             A3A_planning_assaultStarted = false;
             A3A_planning_captureTriggered = false;
             A3A_planning_stage = 1;
-            
-            // Clean up markers on clients
+
             [true] remoteExec ["A3A_fnc_planning_localCleanupMarkers", 0];
-            };
+
+            diag_log format ["[A3A Planning] %1 captured - cleanup action %2 executed immediately.", _marker, _captureAction];
         } else {
             // --- SCENARIO B: Assault in progress (enemies still own the position) ---
 

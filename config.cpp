@@ -202,20 +202,6 @@ class A3A {
             texts[] = {"1 Squad", "2 Squads", "3 Squads", "4 Squads", "5 Squads", "6 Squads", "7 Squads", "8 Squads", "9 Squads", "10 Squads (Default)", "11 Squads", "12 Squads", "13 Squads", "14 Squads", "15 Squads", "16 Squads", "17 Squads", "18 Squads", "19 Squads", "20 Squads"};
             default = 10;
         };
-        class A3A_tweak_siegeAutonomousSquads : ExtenderParams {
-            title = "Autonomous Siege Squads";
-            tooltip = "When enabled, deployed squads operate autonomously, moving toward the objective and defending or clearing nearby hostiles without player intervention.";
-            values[] = {0, 1};
-            texts[] = {"Disabled (Player Controlled)", "Enabled (Autonomous)"};
-            default = 1;
-        };
-        class A3A_tweak_siegeAddHC : ExtenderParams {
-            title = "Add Siege Squads to High Command";
-            tooltip = "When enabled, all deployed siege squads are assigned to the player's High Command upon spawning.";
-            values[] = {0, 1};
-            texts[] = {"Disabled (Independent)", "Enabled (High Command)"};
-            default = 0;
-        };
         class A3A_tweak_siegeRefundOrGarrison : ExtenderParams {
             title = "Capture Reward Action";
             tooltip = "Choose whether surviving siege troops are garrisoned at the captured outpost, refunded to the faction database, or left under player control.";
@@ -229,55 +215,6 @@ class A3A {
             values[] = {0, 0.1, 0.25, 0.5, 1, 2};
             texts[] = {"Instant", "10x Faster", "4x Faster", "2x Faster", "Default", "2x Slower"};
             default = 1;
-        };
-        class A3A_tweak_mortarFFRadius : ExtenderParams {
-            title = "Mortar Friendly Fire Safety Radius";
-            tooltip = "Minimum distance (in meters) required between friendly units and a mortar impact point before the fire mission is authorized.";
-            values[] = {20, 30, 40, 50, 75, 100};
-            texts[] = {"20m", "30m", "40m (Default)", "50m", "75m", "100m"};
-            default = 40;
-        };
-        class A3A_tweak_mortarAORadius : ExtenderParams {
-            title = "Mortar AO Target Radius";
-            tooltip = "Radius (in meters) around the active siege objective within which enemy units are considered valid mortar targets.";
-            values[] = {300, 400, 600, 800, 1000};
-            texts[] = {"300m", "400m", "600m (Default)", "800m", "1000m"};
-            default = 600;
-        };
-        class A3A_tweak_siegeInitDelay : ExtenderParams {
-            title = "Assault Init Delay";
-            tooltip = "Delay (seconds) after commencing a siege before squads begin traveling, giving the objective's defenses time to finish spawning in.";
-            values[] = {0, 5, 8, 10, 15, 20, 30};
-            texts[] = {"Disabled (0s)", "5 Seconds", "8 Seconds (Default)", "10 Seconds", "15 Seconds", "20 Seconds", "30 Seconds"};
-            default = 8;
-        };
-        class A3A_tweak_mortarMaxRounds : ExtenderParams {
-            title = "Mortar Ammo Supply";
-            tooltip = "Max HE rounds a deployed Mortar Team can fire before converting to assault infantry. 0 = Unlimited.";
-            values[] = {0, 8, 12, 16, 20, 24};
-            texts[] = {"Unlimited", "8 Rounds", "12 Rounds", "16 Rounds (Default)", "20 Rounds", "24 Rounds"};
-            default = 16;
-        };
-        class A3A_tweak_mortarFireCooldown : ExtenderParams {
-            title = "Mortar Fire Mission Cooldown";
-            tooltip = "Minimum seconds between fire missions for a single Mortar Team.";
-            values[] = {10, 15, 20, 25, 30};
-            texts[] = {"10s", "15s", "20s (Default)", "25s", "30s"};
-            default = 20;
-        };
-        class A3A_tweak_mortarRoundsPerBurst : ExtenderParams {
-            title = "Mortar Rounds Per Burst";
-            tooltip = "Number of rounds fired in a single mortar fire mission.";
-            values[] = {2, 3, 4, 5, 6};
-            texts[] = {"2", "3", "4 (Default)", "5", "6"};
-            default = 4;
-        };
-        class A3A_tweak_mortarMinCluster : ExtenderParams {
-            title = "Mortar Minimum Cluster Size";
-            tooltip = "Minimum number of enemies grouped near a target before a Mortar Team will fire on it.";
-            values[] = {1, 2, 3, 4};
-            texts[] = {"1 (Any Target)", "2 (Default)", "3", "4"};
-            default = 2;
         };
     };
 };

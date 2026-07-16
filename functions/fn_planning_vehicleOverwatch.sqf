@@ -38,7 +38,16 @@ private _fnc_isValidGroundPos = {
     if ((_normal select 2) < 0.82) exitWith { false }; // vehicles need flatter ground than infantry
     private _blockers = (_pos nearObjects ["House", 5]) + (_pos nearObjects ["Building", 5]) + (_pos nearObjects ["Rocks", 5]) + (_pos nearObjects ["Rock", 5]);
     if (count _blockers > 0) exitWith { false };
+    // Reject heavily forested spots - AI vehicle pathing into dense tree cover is the
+    // main source of vehicles getting stuck on "technically reachable" terrain.
+    private _treeCount = count (_pos nearObjects ["Tree", 15]);
+    if (_treeCount > 10) exitWith { false };
     true
+};
+
+private _fnc_isNearRoad = {
+    params ["_pos", ["_radius", 60, [0]]];
+    count (_pos nearRoads _radius) > 0
 };
 
 // Ring-search for a valid, navigable position at _dist from _biasFrom (offset further away from
@@ -51,6 +60,20 @@ private _fnc_findPos = {
     if (_dir isEqualTo [0,0,0]) then { _dir = [1,0,0]; };
     private _angles = [0,-30,30,-60,60,-90,90,-120,120,150,-150,180];
     private _best = [];
+
+    // Pass 0: prefer a candidate that's both valid and near a road - this is what
+    // actually fixes AI vehicles trying to bulldoze through forest/off-road terrain.
+    {
+        private _testDir = [_dir, _x] call _fnc_rotateDir;
+        private _cand = _biasFrom vectorAdd (_testDir vectorMultiply _dist);
+        private _safe = [_cand, 0, 40, 5, 0, 0.7, 0] call BIS_fnc_findSafePos;
+        if (count _safe == 2) then {
+            private _cPos = [_safe select 0, _safe select 1, 0];
+            if ([_cPos] call _fnc_isValidGroundPos && {[_cPos] call _fnc_isNearRoad} && {[_cPos, _losTarget] call _fnc_hasLOS}) exitWith { _best = _cPos; };
+        };
+    } forEach _angles;
+
+    if (_best isNotEqualTo []) exitWith { _best };
 
     {
         private _testDir = [_dir, _x] call _fnc_rotateDir;

@@ -140,17 +140,8 @@ if (isServer) then {
 			["A3A_tweak_discoveryReveal", 1],
 			["A3A_tweak_discoveryDistance", 200],
 			["A3A_tweak_maxSiegeSquads", 10],
-			["A3A_tweak_siegeAutonomousSquads", 1],
-			["A3A_tweak_siegeAddHC", 0],
 			["A3A_tweak_siegeRefundOrGarrison", 1],
-			["A3A_tweak_siegeTravelTimeMultiplier", 1],
-			["A3A_tweak_mortarFFRadius", 40],
-			["A3A_tweak_mortarAORadius", 600],
-			["A3A_tweak_siegeInitDelay", 8],
-			["A3A_tweak_mortarMaxRounds", 16],
-			["A3A_tweak_mortarFireCooldown", 20],
-			["A3A_tweak_mortarRoundsPerBurst", 4],
-			["A3A_tweak_mortarMinCluster", 2]
+			["A3A_tweak_siegeTravelTimeMultiplier", 1]
 		];
 	};
 

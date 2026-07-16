@@ -34,12 +34,14 @@ if (_staticClass == "" || {!isClass (configFile >> "CfgVehicles" >> _staticClass
 // Mortars now hold much closer to the frontline, relocate in short 150-300m hops instead of
 // jumping across the map, and can engage out to roughly half their effective range (~3000m)
 // so they start contributing fire much earlier. MG teams still hug the advancing infantry.
-private _idealDist  = if (_isMortar) then {500} else {100};   // Mortar ~500m behind frontline / MG ~100m behind frontline
+private _idealDist  = if (_isMortar) then {125} else {100};   // Mortar ~100-150m behind frontline (was 500m) / MG ~100m behind frontline
 private _maxDist    = if (_isMortar) then {700} else {180};   // "frontline/targets out of effective range"
 private _dangerDist = if (_isMortar) then {150} else {50};    // "position heavily threatened"
 private _originalCount = count (units _group);
 
-private _minDwellTime = if (_isMortar) then {0} else {15};
+// Mortars need a longer minimum dwell time than MG teams so a single momentary LOS/range
+// blip doesn't trigger an immediate pack-up right after deploying.
+private _minDwellTime = if (_isMortar) then {25} else {15};
 private _lastDeployTime = 0;
 
 // Mortar Balance: a crew may only assemble its tube twice per siege. Once that's spent
@@ -49,14 +51,15 @@ private _maxMortarDeployments = 2;
 private _mortarDeployCount = 0;
 
 // --- Mortar Ammo Cap ---
-private _maxMortarRoundsCfg = missionNamespace getVariable ["A3A_tweak_mortarMaxRounds", 16];
+// Hardcoded (no longer lobby-tweakable): 16 rounds per mortar crew before converting to infantry.
+private _maxMortarRoundsCfg = 16;
 private _mortarAmmoUnlimited = (_maxMortarRoundsCfg <= 0);
 private _mortarRoundsFired = 0;
 
 private _confirmNeeded = if (_isMortar) then {5} else {3};
-private _minClusterSize = missionNamespace getVariable ["A3A_tweak_mortarMinCluster", 2];
-private _mortarFireCooldown = missionNamespace getVariable ["A3A_tweak_mortarFireCooldown", 20];
-private _mortarRoundsPerBurst = missionNamespace getVariable ["A3A_tweak_mortarRoundsPerBurst", 4];
+private _minClusterSize = 2;
+private _mortarFireCooldown = 20;
+private _mortarRoundsPerBurst = 4;
 
 // The FIRST mortar deployment assembles immediately wherever the crew currently stands
 // (their staging position), instead of marching out to a calculated standoff point first.
@@ -93,8 +96,34 @@ private _fnc_isValidGroundPos = {
     true
 };
 
+// MG-only: reject candidates that are technically clear but buried in forest/heavy
+// vegetation - these give a bad or nonexistent firing arc even though _fnc_hasLOS
+// might pass on the single line sampled to the frontline anchor.
+private _fnc_hasClearFiringArc = {
+    params ["_pos","_losTarget"];
+    if !([_pos, _losTarget] call _fnc_hasLOS) exitWith { false };
+
+    // Reject if the position itself is choked with trees/bushes (poor firing arc even
+    // with a clear center line - foliage this dense blocks peripheral sightlines).
+    private _foliageCount = count ((_pos nearObjects ["Tree", 12]) + (_pos nearObjects ["Bush", 12]));
+    if (_foliageCount > 6) exitWith { false };
+
+    // Sample two lateral offsets either side of the direct line to the frontline anchor
+    // to confirm an actual arc exists, not just one lucky unobstructed pixel.
+    private _dir = _pos vectorFromTo _losTarget;
+    private _mag2D = sqrt ((_dir select 0)^2 + (_dir select 1)^2);
+    if (_mag2D < 0.01) exitWith { true };
+    private _perp = [-(_dir select 1) / _mag2D, (_dir select 0) / _mag2D, 0];
+    private _sample1 = _losTarget vectorAdd (_perp vectorMultiply 20);
+    private _sample2 = _losTarget vectorAdd (_perp vectorMultiply -20);
+    private _clearSamples = 0;
+    if ([_pos, _sample1] call _fnc_hasLOS) then { _clearSamples = _clearSamples + 1; };
+    if ([_pos, _sample2] call _fnc_hasLOS) then { _clearSamples = _clearSamples + 1; };
+    _clearSamples >= 1
+};
+
 private _fnc_findPos = {
-    params ["_dirAnchor","_biasFrom","_dist","_losTarget"];
+    params ["_dirAnchor","_biasFrom","_dist","_losTarget",["_requireArc",false,[false]]];
     private _dir = _dirAnchor vectorFromTo _biasFrom;
     if (_dir isEqualTo [0,0,0]) then { _dir = [1,0,0]; };
     private _angles = [0,-30,30,-60,60,-90,90,-120,120,150,-150,180];
@@ -106,7 +135,12 @@ private _fnc_findPos = {
         private _safe = [_cand, 0, 40, 3, 0, 0.7, 0] call BIS_fnc_findSafePos;
         if (count _safe == 2) then {
             private _cPos = [_safe select 0, _safe select 1, 0];
-            if ([_cPos] call _fnc_isValidGroundPos && {[_cPos, _losTarget] call _fnc_hasLOS}) exitWith { _best = _cPos; };
+            private _qualifies = if (_requireArc) then {
+                [_cPos] call _fnc_isValidGroundPos && {[_cPos, _losTarget] call _fnc_hasClearFiringArc}
+            } else {
+                [_cPos] call _fnc_isValidGroundPos && {[_cPos, _losTarget] call _fnc_hasLOS}
+            };
+            if (_qualifies) exitWith { _best = _cPos; };
         };
     } forEach _angles;
 
@@ -213,7 +247,7 @@ while {!_done} do {
         };
 
         private _searchAnchor = _biasPos;
-        private _deployPos = [_curTargetPos, _searchAnchor, _idealDist, _searchAnchor] call _fnc_findPos;
+        private _deployPos = [_curTargetPos, _searchAnchor, _idealDist, _searchAnchor, !_isMortar] call _fnc_findPos;
 
         // --- 1. Move to the support position ---
         for "_i" from (count (waypoints _group) - 1) to 0 step -1 do { deleteWaypoint [_group, _i]; };
@@ -238,10 +272,18 @@ while {!_done} do {
                 private _engageIdx = allUnits findIf {
                     alive _x && {side _x in [Occupants, Invaders]} && {_x distance2D _curLeaderPos < _earlyEngageRange} && {[_curLeaderPos, getPosATL _x] call _fnc_hasLOS}
                 };
-                if (_engageIdx != -1) exitWith { _reached = true; _earlyDeploy = true; };
+                // MG teams must be able to set up their emplacement even while pinned/suppressed,
+                // instead of only reacting to a spotted enemy with clean LOS.
+                private _isSuppressed = (getSuppression (leader _group)) > 0.6;
+                if (_engageIdx != -1 || {_isSuppressed}) exitWith { _reached = true; _earlyDeploy = true; };
             };
 
-            if (time > _moveTimeout) exitWith {};
+            if (time > _moveTimeout) exitWith {
+                // Timed out trying to physically reach the ideal standoff point - almost always
+                // because the crew is pinned by suppression on the way there. Deploy right where
+                // they are rather than looping back to retry the same approach forever.
+                if (!_isMortar) then { _reached = true; _earlyDeploy = true; };
+            };
             sleep 2;
         };
         if (_done) exitWith {};
@@ -302,7 +344,8 @@ while {!_done} do {
         // radius around the objective marker, or actively engaged with/near the advancing
         // frontline. A stray patrol or roadblock crew 2km away no longer qualifies just
         // because it's within mortar range - it has to be relevant to this siege.
-        private _aoRadius = missionNamespace getVariable ["A3A_tweak_mortarAORadius", 600];
+        // Hardcoded (no longer lobby-tweakable): 600m mortar area-of-operations radius.
+        private _aoRadius = 600;
         private _fnc_isOnObjective = {
             params ["_unit"];
             private _p = getPosATL _unit;
@@ -362,7 +405,8 @@ while {!_done} do {
                 if (_chosen isNotEqualTo []) then {
                     _chosen params ["_impactBasePos", "_clusterCount"];
 
-                    private _ffRadius = missionNamespace getVariable ["A3A_tweak_mortarFFRadius", 40];
+                    // Hardcoded (no longer lobby-tweakable): 40m mortar friendly-fire safety radius.
+                    private _ffRadius = 40;
                     private _friendliesNearImpact = { alive _x && {side _x == teamPlayer} && {_x distance2D _impactBasePos < _ffRadius} } count allUnits;
 
                     if (_friendliesNearImpact > 0) then {

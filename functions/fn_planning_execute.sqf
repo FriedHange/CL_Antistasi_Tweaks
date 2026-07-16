@@ -474,7 +474,8 @@ if (_mode == "DEPLOY") then {
     private _targetPos = getMarkerPos A3A_planning_objective;
     diag_log format ["[A3A DEBUG] Stage 6: entering dispatch loop, targetPos=%1", _targetPos];
 
-    private _initDelay = missionNamespace getVariable ["A3A_tweak_siegeInitDelay", 8];
+    // Hardcoded (no longer lobby-tweakable): 8s delay before dispatching the assault.
+    private _initDelay = 8;
 
     [_validatedQueue, _entryPositions, _hqPos, _targetPos, _spawnSquadDirect, _addHC, _clientOwnerID, _initDelay] spawn {
         params ["_validatedQueue", "_entryPositions", "_hqPos", "_targetPos", "_spawnSquadDirect", "_addHC", "_clientOwnerID", "_initDelay"];
