@@ -39,11 +39,24 @@ private _maxDist    = if (_isMortar) then {700} else {180};   // "frontline/targ
 private _dangerDist = if (_isMortar) then {150} else {50};    // "position heavily threatened"
 private _originalCount = count (units _group);
 
+private _minDwellTime = if (_isMortar) then {0} else {15};
+private _lastDeployTime = 0;
+
 // Mortar Balance: a crew may only assemble its tube twice per siege. Once that's spent
 // (packed up, lost, or abandoned a second time) the survivors permanently convert to
 // ordinary assault infantry rather than deploying a third mortar.
 private _maxMortarDeployments = 2;
 private _mortarDeployCount = 0;
+
+// --- Mortar Ammo Cap ---
+private _maxMortarRoundsCfg = missionNamespace getVariable ["A3A_tweak_mortarMaxRounds", 16];
+private _mortarAmmoUnlimited = (_maxMortarRoundsCfg <= 0);
+private _mortarRoundsFired = 0;
+
+private _confirmNeeded = if (_isMortar) then {5} else {3};
+private _minClusterSize = missionNamespace getVariable ["A3A_tweak_mortarMinCluster", 2];
+private _mortarFireCooldown = missionNamespace getVariable ["A3A_tweak_mortarFireCooldown", 20];
+private _mortarRoundsPerBurst = missionNamespace getVariable ["A3A_tweak_mortarRoundsPerBurst", 4];
 
 // The FIRST mortar deployment assembles immediately wherever the crew currently stands
 // (their staging position), instead of marching out to a calculated standoff point first.
@@ -147,9 +160,9 @@ while {!_done} do {
     if (!alive (leader _group) || {count (units _group) == 0}) exitWith { _done = true; };
     if ((sidesX getVariable [_targetMarker, sideUnknown]) == teamPlayer) exitWith { _done = true; };
 
-    // --- Mortar Balance: deployments exhausted, graduate the survivors to assault infantry ---
-    if (_isMortar && {_mortarDeployCount >= _maxMortarDeployments}) exitWith {
-        diag_log format ["[A3A Tweaks] %1 has expended all %2 mortar deployments. Surviving crew converting to assault infantry.", groupID _group, _maxMortarDeployments];
+    // --- Mortar Balance: deployments/ammunition exhausted, graduate the survivors to assault infantry ---
+    if (_isMortar && {_mortarDeployCount >= _maxMortarDeployments || {!_mortarAmmoUnlimited && {_mortarRoundsFired >= _maxMortarRoundsCfg}}}) exitWith {
+        diag_log format ["[A3A Tweaks] %1 has expended its deployments/ammunition (%2/%3 rounds fired). Surviving crew converting to assault infantry.", groupID _group, _mortarRoundsFired, _maxMortarRoundsCfg];
         if (!isNull _staticVeh) then {
             { unassignVehicle _x; [_x] orderGetIn false; } forEach (crew _staticVeh);
             deleteVehicle _staticVeh; _staticVeh = objNull;
@@ -229,6 +242,7 @@ while {!_done} do {
     // --- 2. Assemble & occupy the emplacement ---
     _staticVeh = createVehicle [_staticClass, getPosATL (leader _group), [], 0, "NONE"];
     [_staticVeh, teamPlayer] call A3A_fnc_AIVEHinit;
+    _lastDeployTime = time;
     private _gunner = selectRandom (units _group);
     _watcher = ((units _group) - [_gunner]) param [0, objNull];
     [_gunner, _staticVeh] remoteExec ["A3A_fnc_planning_localMoveInGunner", owner _gunner];
@@ -292,44 +306,64 @@ while {!_done} do {
         };
         if (_targetsInRange == 0 && {_haveBattlePoint2}) then { _cNoTargets = _cNoTargets + 1; } else { _cNoTargets = 0; };
 
-        if (_cRange >= _confirmNeeded) exitWith { _relocate = true; diag_log "[A3A Tweaks] Relocating: frontline out of effective range."; };
-        if (_cLOS >= _confirmNeeded) exitWith { _relocate = true; diag_log "[A3A Tweaks] Relocating: LOS to the battle lost."; };
-        if (_cNoTargets >= _confirmNeeded) exitWith { _relocate = true; diag_log "[A3A Tweaks] Relocating: no enemies in engagement range."; };
+        if (_cRange >= _confirmNeeded && {(time - _lastDeployTime) > _minDwellTime}) exitWith { _relocate = true; diag_log "[A3A Tweaks] Relocating: frontline out of effective range."; };
+        if (_cLOS >= _confirmNeeded && {(time - _lastDeployTime) > _minDwellTime}) exitWith { _relocate = true; diag_log "[A3A Tweaks] Relocating: LOS to the battle lost."; };
+        if (_cNoTargets >= _confirmNeeded && {(time - _lastDeployTime) > _minDwellTime}) exitWith { _relocate = true; diag_log "[A3A Tweaks] Relocating: no enemies in engagement range."; };
 
         private _targetsNearAO = if (_isMortar) then { _mortarCandidates } else {
             allUnits select { alive _x && {side _x in [Occupants, Invaders]} && {_x distance2D _liveObjPos < 350} }
         };
 
         if (count _targetsNearAO > 0) then {
-            if (_isMortar && {time - _lastFireTime > 25}) then {
-                private _tgt = selectRandom _targetsNearAO;
-                private _impactBasePos = getPosATL _tgt;
+            if (_isMortar && {time - _lastFireTime > _mortarFireCooldown} && {_mortarAmmoUnlimited || {_mortarRoundsFired < _maxMortarRoundsCfg}}) then {
+                // Prune expired target claims made by other mortar teams
+                if (isNil "A3A_planning_activeMortarTargets") then { A3A_planning_activeMortarTargets = []; };
+                A3A_planning_activeMortarTargets = A3A_planning_activeMortarTargets select { (_x select 1) > time };
 
-                // --- Friendly-fire safety check ---
-                private _ffRadius = missionNamespace getVariable ["A3A_tweak_mortarFFRadius", 40];
-                private _friendliesNearImpact = { alive _x && {side _x == teamPlayer} && {_x distance2D _impactBasePos < _ffRadius} } count allUnits;
+                // Rank candidates by local clustering - lone stragglers no longer justify a mission
+                private _clusterRadius = 60;
+                private _rankedTargets = _targetsNearAO apply {
+                    private _candPos = getPosATL _x;
+                    [_x, _candPos, ({ _x distance2D _candPos < _clusterRadius } count _targetsNearAO)]
+                };
+                _rankedTargets = [_rankedTargets, [], { _x select 2 }, "DESCEND"] call BIS_fnc_sortBy;
 
-                if (_friendliesNearImpact > 0) then {
-                    diag_log format ["[A3A Tweaks] %1 withheld fire mission - %2 friendly unit(s) within %3m of impact point. Re-evaluating shortly.", groupID _group, _friendliesNearImpact, _ffRadius];
-                    // Don't lock the cooldown - the loop's own 10s cadence will re-check
-                    // this target/situation on the next pass rather than firing blind.
-                } else {
-                    _lastFireTime = time;
+                private _chosen = [];
+                {
+                    _x params ["_cand", "_candPos", "_clusterCount"];
+                    if (_chosen isEqualTo [] && {_clusterCount >= _minClusterSize}) then {
+                        private _alreadyClaimed = A3A_planning_activeMortarTargets findIf { (_x select 0) distance2D _candPos < 80 } != -1;
+                        if (!_alreadyClaimed) then { _chosen = [_candPos, _clusterCount]; };
+                    };
+                } forEach _rankedTargets;
 
-                    // --- Accuracy/dispersion: mortars suppress and disrupt, they don't
-                    // land surgical hits. Spread scales with range so long shots walk
-                    // wider than close ones, and each volley in a fire mission gets its
-                    // own random offset so rounds "walk" across the area instead of
-                    // stacking on the same spot. ---
-                    private _distToTarget = _curPos distance2D _impactBasePos;
-                    private _dispersionRadius = ((15 + _distToTarget * 0.035) min 120) max 15;
-                    private _ang = random 360;
-                    private _rad = _dispersionRadius * sqrt (random 1);
-                    private _dispersedPos = _impactBasePos vectorAdd [_rad * sin _ang, _rad * cos _ang, 0];
+                if (_chosen isNotEqualTo []) then {
+                    _chosen params ["_impactBasePos", "_clusterCount"];
 
-                    private _mags = magazines _staticVeh;
-                    if (count _mags > 0) then {
-                        [_staticVeh, _dispersedPos, _mags # 0, 3] remoteExec ["A3A_fnc_planning_localArtilleryFire", owner _staticVeh];
+                    private _ffRadius = missionNamespace getVariable ["A3A_tweak_mortarFFRadius", 40];
+                    private _friendliesNearImpact = { alive _x && {side _x == teamPlayer} && {_x distance2D _impactBasePos < _ffRadius} } count allUnits;
+
+                    if (_friendliesNearImpact > 0) then {
+                        diag_log format ["[A3A Tweaks] %1 withheld fire mission - %2 friendly unit(s) within %3m of impact point.", groupID _group, _friendliesNearImpact, _ffRadius];
+                    } else {
+                        private _roundsThisMission = if (_mortarAmmoUnlimited) then { _mortarRoundsPerBurst } else { _mortarRoundsPerBurst min (_maxMortarRoundsCfg - _mortarRoundsFired) };
+                        _lastFireTime = time;
+
+                        private _distToTarget = _curPos distance2D _impactBasePos;
+                        private _dispersionRadius = ((15 + _distToTarget * 0.035) min 120) max 15;
+                        private _ang = random 360;
+                        private _rad = _dispersionRadius * sqrt (random 1);
+                        private _dispersedPos = _impactBasePos vectorAdd [_rad * sin _ang, _rad * cos _ang, 0];
+
+                        private _mags = magazines _staticVeh;
+                        if (count _mags > 0) then {
+                            [_staticVeh, _dispersedPos, _mags # 0, _roundsThisMission] remoteExec ["A3A_fnc_planning_localArtilleryFire", owner _staticVeh];
+                            _mortarRoundsFired = _mortarRoundsFired + _roundsThisMission;
+
+                            A3A_planning_activeMortarTargets pushBack [_impactBasePos, time + _mortarFireCooldown];
+
+                            diag_log format ["[A3A Tweaks] %1 fired %2 round(s) at a cluster of %3 enemies (%4/%5 total used).", groupID _group, _roundsThisMission, _clusterCount, _mortarRoundsFired, _maxMortarRoundsCfg];
+                        };
                     };
                 };
             };

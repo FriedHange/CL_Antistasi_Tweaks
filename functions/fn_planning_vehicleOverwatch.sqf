@@ -122,6 +122,19 @@ while {!_done} do {
     private _searchAnchor = if (_haveBattlePoint) then { _frontPos } else { _curTgt };
     private _deployPos = [_curTgt, _searchAnchor, _idealDist, _searchAnchor] call _fnc_findPos;
 
+    // Never intentionally sit inside the objective itself unless there is truly no
+    // alternative - re-search once at a wider radius before accepting a close-in spot.
+    private _minStandoff = 60;
+    if (_deployPos distance2D _curTgt < _minStandoff) then {
+        diag_log format ["[A3A Tweaks] %1 candidate deploy position too close to objective (%2m) - searching for a safer stand-off.", groupID _group, round (_deployPos distance2D _curTgt)];
+        private _saferPos = [_curTgt, _searchAnchor, (_idealDist max _minStandoff), _searchAnchor] call _fnc_findPos;
+        if (_saferPos distance2D _curTgt >= _minStandoff) then {
+            _deployPos = _saferPos;
+        } else {
+            diag_log format ["[A3A Tweaks] %1 no safer position found; holding as last resort at %2m from objective.", groupID _group, round (_deployPos distance2D _curTgt)];
+        };
+    };
+
     // --- 1. Move to position ---
     for "_i" from (count (waypoints _group) - 1) to 0 step -1 do { deleteWaypoint [_group, _i]; };
     private _wp = _group addWaypoint [_deployPos, 0];

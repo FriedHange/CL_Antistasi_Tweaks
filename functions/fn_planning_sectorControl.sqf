@@ -24,8 +24,12 @@ while {true} do {
 
         // --- SCENARIO A: Sector has already been captured (e.g., manually by player or other forces) ---
         if (_side == teamPlayer) then {
-            private _captureAction = missionNamespace getVariable ["A3A_tweak_siegeRefundOrGarrison", 1];
-            if (_captureAction > 0 && {!isNil "A3A_planning_activeGroups" && {count A3A_planning_activeGroups > 0}}) then {
+            private _nearbyEnemies = { alive _x && {side _x in [Occupants, Invaders]} && {_x distance2D _targetPos < 500} } count allUnits;
+            if (_nearbyEnemies > 0) then {
+                // Captured but not secure yet - defenders stay put; re-check again next tick.
+            } else {
+                private _captureAction = missionNamespace getVariable ["A3A_tweak_siegeRefundOrGarrison", 1];
+                if (_captureAction > 0 && {!isNil "A3A_planning_activeGroups" && {count A3A_planning_activeGroups > 0}}) then {
                 private _totalRefundMoney = 0;
                 private _totalRefundHR = 0;
                 private _totalGarrisonedCount = 0;
@@ -119,10 +123,12 @@ while {true} do {
 
             A3A_planning_objective = "";
             A3A_planning_assaultStarted = false;
+            A3A_planning_captureTriggered = false;
             A3A_planning_stage = 1;
             
             // Clean up markers on clients
             [true] remoteExec ["A3A_fnc_planning_localCleanupMarkers", 0];
+            };
         } else {
             // --- SCENARIO B: Assault in progress (enemies still own the position) ---
 
@@ -170,83 +176,29 @@ while {true} do {
 
                     // Check if any friendly unit has reached the flag (within 15m)
                     private _nearFlag = { alive _x && {side _x == teamPlayer} && {_x distance2D _targetPos < 15} } count allUnits;
-                    if (_nearFlag > 0) then {
+                    if (_nearFlag > 0 && {!(missionNamespace getVariable ["A3A_planning_captureTriggered", false])}) then {
                         diag_log format ["[A3A Planning] Rebel unit reached flag area. Seizing %1...", _marker];
-                        
-                        // Collect all surviving units to convert to garrison list
-                        private _garrisonList = [];
-                        private _totalGarrisonedCount = 0;
-                        private _allRecoveredVehicles = [];
-                        
+
+                        A3A_planning_captureTriggered = true;
+                        publicVariable "A3A_planning_captureTriggered";
+
+                        // Order surviving forces to hold and defend the objective instead of
+                        // being deleted immediately - Scenario A (above) performs the actual
+                        // garrison/refund conversion on a later tick, once the area is
+                        // confirmed clear of remaining enemies.
                         {
-                            private _group = _x;
-                            if (!isNull _group) then {
-                                private _aliveUnits = (units _group) select { alive _x };
-                                {
-                                    _garrisonList pushBack (typeOf _x);
-                                    _totalGarrisonedCount = _totalGarrisonedCount + 1;
-                                } forEach _aliveUnits;
-
-                                private _groupVehicles = [];
-                                {
-                                    private _veh = vehicle _x;
-                                    if (_veh != _x && {alive _veh && {!(_veh in _groupVehicles)}}) then {
-                                        _groupVehicles pushBack _veh;
-                                    };
-                                } forEach _aliveUnits;
-
-                                {
-                                    _allRecoveredVehicles pushBack (typeOf _x);
-                                } forEach _groupVehicles;
-                                
-                                // Delete physical units and groups
-                                { deleteVehicle _x; } forEach _groupVehicles;
-                                { deleteVehicle _x; } forEach _aliveUnits;
-                                deleteGroup _group;
+                            if (!isNull _x && {count (units _x) > 0}) then {
+                                for "_i" from (count (waypoints _x) - 1) to 0 step -1 do { deleteWaypoint [_x, _i]; };
+                                private _wp = _x addWaypoint [_targetPos, 0];
+                                _wp setWaypointType "GUARD";
+                                _x setBehaviour "AWARE";
+                                _x setCombatMode "RED";
+                                [_x, _wp select 1] remoteExec ["A3A_fnc_planning_localSetCurrentWaypoint", groupOwner _x];
                             };
-                        } forEach A3A_planning_activeGroups;
+                        } forEach _aliveGroups;
 
-                        // Add recovered vehicles to HQ Garage
-                        if (count _allRecoveredVehicles > 0) then {
-                            [_allRecoveredVehicles] call A3A_fnc_planning_serverAddGarage;
-                        };
-                        
-                        A3A_planning_activeGroups = [];
-                        publicVariable "A3A_planning_activeGroups";
-
-                        // Trigger the native Antistasi sector capture function
+                        // Trigger the native Antistasi sector capture function (side flip only)
                         [teamPlayer, _marker] spawn A3A_fnc_markerChange;
-                        
-                        // Wait for side transition to complete, then assign persistent garrison
-                        [_marker, _totalGarrisonedCount, _garrisonList, _allRecoveredVehicles] spawn {
-                            params ["_marker", "_totalGarrisonedCount", "_garrisonList", "_allRecoveredVehicles"];
-                            waitUntil {sleep 1; (sidesX getVariable [_marker, sideUnknown]) == teamPlayer};
-                            
-                            // Append survivors to the newly generated rebel garrison
-                            private _currentGarrison = garrison getVariable [_marker, []];
-                            _currentGarrison append _garrisonList;
-                            garrison setVariable [_marker, _currentGarrison, true];
-
-                            if (isServer) then {
-                                [garrison, _marker] remoteExec ["A3A_fnc_garrisonUpdate", 2];
-                            };
-                            
-                            private _msg = format ["%1 captured! %2 surviving troops garrisoned permanently.", markerText ("Dum" + _marker), _totalGarrisonedCount];
-                            if (count _allRecoveredVehicles > 0) then {
-                                _msg = _msg + format [" Recovered %1 vehicles to HQ Garage.", count _allRecoveredVehicles];
-                            };
-
-                            [
-                                "Objective Captured",
-                                _msg
-                            ] remoteExec ["A3A_fnc_customHint", 0];
-                        };
-                        
-                        // Reset planning variables
-                        A3A_planning_objective = "";
-                        A3A_planning_assaultStarted = false;
-                        A3A_planning_stage = 1;
-                        
                         // Clean up markers on clients
                         [true] remoteExec ["A3A_fnc_planning_localCleanupMarkers", 0];
                     };

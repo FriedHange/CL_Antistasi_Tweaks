@@ -244,6 +244,41 @@ class A3A {
             texts[] = {"300m", "400m", "600m (Default)", "800m", "1000m"};
             default = 600;
         };
+        class A3A_tweak_siegeInitDelay : ExtenderParams {
+            title = "Assault Init Delay";
+            tooltip = "Delay (seconds) after commencing a siege before squads begin traveling, giving the objective's defenses time to finish spawning in.";
+            values[] = {0, 5, 8, 10, 15, 20, 30};
+            texts[] = {"Disabled (0s)", "5 Seconds", "8 Seconds (Default)", "10 Seconds", "15 Seconds", "20 Seconds", "30 Seconds"};
+            default = 8;
+        };
+        class A3A_tweak_mortarMaxRounds : ExtenderParams {
+            title = "Mortar Ammo Supply";
+            tooltip = "Max HE rounds a deployed Mortar Team can fire before converting to assault infantry. 0 = Unlimited.";
+            values[] = {0, 8, 12, 16, 20, 24};
+            texts[] = {"Unlimited", "8 Rounds", "12 Rounds", "16 Rounds (Default)", "20 Rounds", "24 Rounds"};
+            default = 16;
+        };
+        class A3A_tweak_mortarFireCooldown : ExtenderParams {
+            title = "Mortar Fire Mission Cooldown";
+            tooltip = "Minimum seconds between fire missions for a single Mortar Team.";
+            values[] = {10, 15, 20, 25, 30};
+            texts[] = {"10s", "15s", "20s (Default)", "25s", "30s"};
+            default = 20;
+        };
+        class A3A_tweak_mortarRoundsPerBurst : ExtenderParams {
+            title = "Mortar Rounds Per Burst";
+            tooltip = "Number of rounds fired in a single mortar fire mission.";
+            values[] = {2, 3, 4, 5, 6};
+            texts[] = {"2", "3", "4 (Default)", "5", "6"};
+            default = 4;
+        };
+        class A3A_tweak_mortarMinCluster : ExtenderParams {
+            title = "Mortar Minimum Cluster Size";
+            tooltip = "Minimum number of enemies grouped near a target before a Mortar Team will fire on it.";
+            values[] = {1, 2, 3, 4};
+            texts[] = {"1 (Any Target)", "2 (Default)", "3", "4"};
+            default = 2;
+        };
     };
 };
 

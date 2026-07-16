@@ -36,6 +36,9 @@ if (_mode == "DEPLOY") then {
     // Reset active siege groups
     A3A_planning_activeGroups = [];
     publicVariable "A3A_planning_activeGroups";
+    A3A_planning_captureTriggered = false;
+    publicVariable "A3A_planning_captureTriggered";
+    diag_log "[A3A DEBUG] Stage 0: init vars OK";
 
     // --- DEFENSIVE VALIDATION & FALLBACK SYSTEM ---
     private _fallbackQueue = [];
@@ -45,18 +48,13 @@ if (_mode == "DEPLOY") then {
         _x params ["_unitTypes", "_idFormat", "_special", "_costMoney", "_costHR", "_vehType", "_displayName", "_entryName"];
         
         private _squadFailed = false;
-        private _validatedUnits = [];
-
-        // 1. Validate and replace unit classnames
-        {
-            if (isNil "_x" || {_x == "" || {!isClass (configFile >> "CfgVehicles" >> _x)}}) then {
-                diag_log format ["[A3A Ultimate Tweaks Extender] Spawning unit class '%1' is invalid. Falling back to 'I_G_Soldier_F'.", _x];
-                _validatedUnits pushBack "I_G_Soldier_F";
-                _squadFailed = true;
-            } else {
-                _validatedUnits pushBack _x;
-            };
-        } forEach _unitTypes;
+        // Faction-agnostic: don't pre-validate unit identifiers against CfgVehicles here.
+        // Entries may be plain classnames OR faction-specific loadout identifiers (e.g. custom
+        // loadout systems used by non-vanilla factions like Syndikat) - A3A_fnc_spawnGroup
+        // already knows how to resolve whatever format the active faction uses, so we trust it
+        // as the primary spawn path. Raw classnames are only strictly required by the manual
+        // createUnit fallback further down, and THAT is where we validate/substitute if needed.
+        private _validatedUnits = +_unitTypes;
 
         // 2. Validate and replace vehicle type (if specified)
         private _validatedVeh = _vehType;
@@ -102,6 +100,7 @@ if (_mode == "DEPLOY") then {
 
         _fallbackQueue pushBack [_validatedUnits, _idFormat, _special, _costMoney, _costHR, _validatedVeh, _displayName, _entryName];
     } forEach _queue;
+    diag_log format ["[A3A DEBUG] Stage 1: fallback validation OK, fallbackQueue count=%1", count _fallbackQueue];
 
     // Log fallback conversions to RPT only (no UI warning)
     if (count _failedSquads > 0) then {
@@ -179,6 +178,7 @@ if (_mode == "DEPLOY") then {
         // Push squad with its pre-allocated spawn position to the deployment queue
         _validatedQueue pushBack [_unitTypes, _groupName, _special, _costMoney, _costHR, _vehType, _displayName, _entryName, _spawnPos];
     } forEach _fallbackQueue;
+    diag_log format ["[A3A DEBUG] Stage 2: position allocation OK, validatedQueue count=%1", count _validatedQueue];
 
     // Calculate total cost (using the validated queue)
     private _deductMoney = 0;
@@ -190,6 +190,7 @@ if (_mode == "DEPLOY") then {
 
     // Deduct resources
     [-_deductHR, -_deductMoney] call A3A_fnc_resourcesFIA;
+    diag_log "[A3A DEBUG] Stage 3: resource deduction OK";
 
     // Deduct selected garage vehicles from the HQ garage
     private _garageVehiclesToDeduct = [];
@@ -203,9 +204,11 @@ if (_mode == "DEPLOY") then {
     if (count _garageVehiclesToDeduct > 0) then {
         [_garageVehiclesToDeduct] call A3A_fnc_planning_serverDeductGarage;
     };
+    diag_log "[A3A DEBUG] Stage 4: garage deduction OK";
 
     private _spawnSquadDirect = {
         params ["_unitTypes", "_idFormat", "_special", "_vehType", "_spawnPos", "_targetPos", "_addHC", "_clientOwnerID"];
+        diag_log format ["[A3A DEBUG] spawnSquadDirect invoked for %1", _idFormat];
 
         // Declared locally so it's always in scope no matter which call stack
         // _spawnSquadDirect ends up executing on (spawn does NOT inherit private
@@ -253,11 +256,16 @@ if (_mode == "DEPLOY") then {
                 _group = createGroup teamPlayer;
                 if (!isNull _group) then {
                     {
-                        private _unit = _group createUnit [_x, _spawnPos, [], 10, "NONE"];
+                        private _spawnUnitType = _x;
+                        if (isNil "_spawnUnitType" || {_spawnUnitType == "" || {!isClass (configFile >> "CfgVehicles" >> _spawnUnitType)}}) then {
+                            diag_log format ["[A3A Planning Warning] Manual fallback: unit identifier '%1' isn't a raw createUnit-compatible classname. Falling back to 'I_G_Soldier_F'.", _spawnUnitType];
+                            _spawnUnitType = "I_G_Soldier_F";
+                        };
+                        private _unit = _group createUnit [_spawnUnitType, _spawnPos, [], 10, "NONE"];
                         if (!isNull _unit) then {
                             [_unit] call A3A_fnc_FIAinit;
                         } else {
-                            diag_log format ["[A3A Planning Error] Manual createUnit failed for unit class %1.", _x];
+                            diag_log format ["[A3A Planning Error] Manual createUnit failed for unit class %1.", _spawnUnitType];
                         };
                     } forEach _unitTypes;
                 };
@@ -461,73 +469,88 @@ if (_mode == "DEPLOY") then {
 
         _group
     };
+    diag_log "[A3A DEBUG] Stage 5: spawnSquadDirect compiled OK";
 
     private _targetPos = getMarkerPos A3A_planning_objective;
-    // 2. Spawn travel watches for each queued squad (valid squads only)
-    {
-        _x params ["_unitTypes", "_idFormat", "_special", "_costMoney", "_costHR", "_vehType", "_displayName", "_entryName", "_spawnPos"];
-        
-        private _entryPos = [0,0,0];
+    diag_log format ["[A3A DEBUG] Stage 6: entering dispatch loop, targetPos=%1", _targetPos];
+
+    private _initDelay = missionNamespace getVariable ["A3A_tweak_siegeInitDelay", 8];
+
+    [_validatedQueue, _entryPositions, _hqPos, _targetPos, _spawnSquadDirect, _addHC, _clientOwnerID, _initDelay] spawn {
+        params ["_validatedQueue", "_entryPositions", "_hqPos", "_targetPos", "_spawnSquadDirect", "_addHC", "_clientOwnerID", "_initDelay"];
+
+        if (_initDelay > 0) then {
+            diag_log format ["[A3A Planning] Waiting %1s for the objective's defenses to finish initializing before dispatching the assault...", _initDelay];
+            sleep _initDelay;
+        };
+
+        // 2. Spawn travel watches for each queued squad (valid squads only)
         {
-            _x params ["_name", "_pos"];
-            if (_name == _entryName) exitWith { _entryPos = _pos; };
-        } forEach _entryPositions;
-
-        if (_entryPos isEqualTo [0,0,0]) then {
-            private _markerName = "A3A_planning_entry_" + _entryName;
-            _entryPos = getMarkerPos _markerName;
-        };
-        if (_entryPos isEqualTo [0,0,0]) then { _entryPos = _hqPos; };
-
-        // Calculate travel delay based on road speed ~14 m/s (50 km/h)
-        private _distance = round (_hqPos distance2D _entryPos);
-        private _travelTime = round (_distance / 14);
-        
-        // Apply configurable travel time multiplier
-        private _travelMult = missionNamespace getVariable ["A3A_tweak_siegeTravelTimeMultiplier", 1.0];
-        _travelTime = round (_travelTime * _travelMult);
-        
-        if (_travelMult == 0) then {
-            _travelTime = 0; // Instant
-        } else {
-            _travelTime = (_travelTime max 5) min 300; // Bound between 5s and 5 minutes
-        };
-
-        // Spawn a thread to track travel simulation
-        [_unitTypes, _idFormat, _special, _vehType, _entryPos, _targetPos, _travelTime, _displayName, _entryName, _spawnSquadDirect, _distance, _costMoney, _costHR, _spawnPos, _addHC, _clientOwnerID] spawn {
-            params ["_unitTypes", "_idFormat", "_special", "_vehType", "_entryPos", "_targetPos", "_travelTime", "_displayName", "_entryName", "_spawnSquadDirect", "_distance", "_costMoney", "_costHR", "_spawnPos", "_addHC", "_clientOwnerID"];
-
-            if (_travelTime > 0) then {
-                // Radio departure report
-                [format ["%1 attack group departing HQ for Staging Area %2. Distance: %3m | ETA: %4 seconds.", _displayName, _entryName, _distance, _travelTime]] remoteExec ["A3A_fnc_planning_localSideChat", 0];
-                
-                // Wait for half the travel duration
-                private _halfTime = round (_travelTime / 2);
-                sleep _halfTime;
-
-                // Radio progress report halfway
-                [format ["%1 attack group is halfway to Staging Area %2.", _displayName, _entryName]] remoteExec ["A3A_fnc_planning_localSideChat", 0];
-                sleep (_travelTime - _halfTime);
-            };
-
-            // Spawn the group safely at pre-allocated position
-            private _group = [_unitTypes, _idFormat, _special, _vehType, _spawnPos, _targetPos, _addHC, _clientOwnerID] call _spawnSquadDirect;
+            _x params ["_unitTypes", "_idFormat", "_special", "_costMoney", "_costHR", "_vehType", "_displayName", "_entryName", "_spawnPos"];
             
-            if (!isNull _group) then {
-                // Set tracking variables on group
-                _group setVariable ["siege_costMoney", _costMoney, true];
-                _group setVariable ["siege_costHR", _costHR, true];
-                _group setVariable ["siege_originalCount", count (units _group), true];
+            private _entryPos = [0,0,0];
+            {
+                _x params ["_name", "_pos"];
+                if (_name == _entryName) exitWith { _entryPos = _pos; };
+            } forEach _entryPositions;
 
-                // Track active group for garrison/refund
-                A3A_planning_activeGroups pushBack _group;
-                publicVariable "A3A_planning_activeGroups";
-
-                // Radio arrival report
-                [format ["%1 reports arrival at Staging Area %2! Dismounting and commencing assault.", groupID _group, _entryName]] remoteExec ["A3A_fnc_planning_localSideChat", 0];
+            if (_entryPos isEqualTo [0,0,0]) then {
+                private _markerName = "A3A_planning_entry_" + _entryName;
+                _entryPos = getMarkerPos _markerName;
             };
-        };
-    } forEach _validatedQueue;
+            if (_entryPos isEqualTo [0,0,0]) then { _entryPos = _hqPos; };
+
+            // Calculate travel delay based on road speed ~14 m/s (50 km/h)
+            private _distance = round (_hqPos distance2D _entryPos);
+            private _travelTime = round (_distance / 14);
+            
+            // Apply configurable travel time multiplier
+            private _travelMult = missionNamespace getVariable ["A3A_tweak_siegeTravelTimeMultiplier", 1.0];
+            _travelTime = round (_travelTime * _travelMult);
+            
+            if (_travelMult == 0) then {
+                _travelTime = 0; // Instant
+            } else {
+                _travelTime = (_travelTime max 5) min 300; // Bound between 5s and 5 minutes
+            };
+
+            // Spawn a thread to track travel simulation
+            [_unitTypes, _idFormat, _special, _vehType, _entryPos, _targetPos, _travelTime, _displayName, _entryName, _spawnSquadDirect, _distance, _costMoney, _costHR, _spawnPos, _addHC, _clientOwnerID] spawn {
+                params ["_unitTypes", "_idFormat", "_special", "_vehType", "_entryPos", "_targetPos", "_travelTime", "_displayName", "_entryName", "_spawnSquadDirect", "_distance", "_costMoney", "_costHR", "_spawnPos", "_addHC", "_clientOwnerID"];
+
+                if (_travelTime > 0) then {
+                    // Radio departure report
+                    [format ["%1 attack group departing HQ for Staging Area %2. Distance: %3m | ETA: %4 seconds.", _displayName, _entryName, _distance, _travelTime]] remoteExec ["A3A_fnc_planning_localSideChat", 0];
+                    
+                    // Wait for half the travel duration
+                    private _halfTime = round (_travelTime / 2);
+                    sleep _halfTime;
+
+                    // Radio progress report halfway
+                    [format ["%1 attack group is halfway to Staging Area %2.", _displayName, _entryName]] remoteExec ["A3A_fnc_planning_localSideChat", 0];
+                    sleep (_travelTime - _halfTime);
+                };
+
+                // Spawn the group safely at pre-allocated position
+                private _group = [_unitTypes, _idFormat, _special, _vehType, _spawnPos, _targetPos, _addHC, _clientOwnerID] call _spawnSquadDirect;
+                
+                if (!isNull _group) then {
+                    // Set tracking variables on group
+                    _group setVariable ["siege_costMoney", _costMoney, true];
+                    _group setVariable ["siege_costHR", _costHR, true];
+                    _group setVariable ["siege_originalCount", count (units _group), true];
+
+                    // Track active group for garrison/refund
+                    A3A_planning_activeGroups pushBack _group;
+                    publicVariable "A3A_planning_activeGroups";
+
+                    // Radio arrival report
+                    [format ["%1 reports arrival at Staging Area %2! Dismounting and commencing assault.", groupID _group, _entryName]] remoteExec ["A3A_fnc_planning_localSideChat", 0];
+                };
+            };
+        } forEach _validatedQueue;
+        diag_log "[A3A DEBUG] Stage 7: dispatch loop completed";
+    };
 
     A3A_planning_assaultStarted = true;
     publicVariable "A3A_planning_objective";
