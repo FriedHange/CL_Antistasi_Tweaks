@@ -94,9 +94,10 @@ private _fnc_findPos = {
 };
 
 private _fnc_frontlinePos = {
-    params ["_objPos"];
+    params ["_objPos", ["_allowFallback", true, [true]]];
     ([_objPos] call A3A_fnc_planning_getAssaultAnchor) params ["_advanced","_anchorPos","_anchorDist"];
     if (_anchorDist >= 0) exitWith { [_anchorPos, true] };
+    if (!_allowFallback) exitWith { [_objPos, false] };
     private _nearEnemies = allUnits select { alive _x && {side _x in [Occupants, Invaders]} && {_x distance2D _objPos < 400} };
     if (count _nearEnemies > 0) exitWith { [(_nearEnemies select 0) call {getPosATL _this}, true] };
     [_objPos, false]
@@ -105,6 +106,7 @@ private _fnc_frontlinePos = {
 private _confirmNeeded = 3;
 private _cRange = 0; private _cLOS = 0; private _cNoTargets = 0;
 private _done = false;
+private _isFirstApproach = true;
 
 while {!_done} do {
     if (!alive _vehicle || {{alive _x} count (units _group) == 0}) exitWith { _done = true; };
@@ -118,8 +120,18 @@ while {!_done} do {
     // Stage the vehicle _idealDist further BEHIND the frontline than the frontline anchor
     // itself (i.e. relative to the advancing infantry), never in front of them, and never
     // simply measured from the objective marker.
-    ([_curTgt] call _fnc_frontlinePos) params ["_frontPos","_haveBattlePoint"];
-    private _searchAnchor = if (_haveBattlePoint) then { _frontPos } else { _curTgt };
+    ([_curTgt, !_isFirstApproach] call _fnc_frontlinePos) params ["_frontPos","_haveBattlePoint"];
+
+    // Don't push up to standoff distance from the objective until our own assault
+    // squads have actually made contact — otherwise this fires from the very first
+    // tick (defenders are always "near" their own base) and sends support/vehicle
+    // elements right up to the enemy's doorstep alone.
+    if (!_haveBattlePoint) then {
+        sleep 10;
+        continue;
+    };
+
+    private _searchAnchor = _frontPos;
     private _deployPos = [_curTgt, _searchAnchor, _idealDist, _searchAnchor] call _fnc_findPos;
 
     // Never intentionally sit inside the objective itself unless there is truly no
@@ -155,6 +167,7 @@ while {!_done} do {
     };
     if (_done) exitWith {};
     if (!_reached) then { continue; };
+    _isFirstApproach = false;
 
     // --- 2. Stop and engage ---
     _group setBehaviour "COMBAT"; _group setCombatMode "RED";

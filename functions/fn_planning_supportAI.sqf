@@ -62,6 +62,10 @@ private _mortarRoundsPerBurst = missionNamespace getVariable ["A3A_tweak_mortarR
 // (their staging position), instead of marching out to a calculated standoff point first.
 private _firstDeployment = true;
 
+private _isFirstApproach = true;
+private _clusterMissStreak = 0;
+private _maxClusterMisses = 3; // after this many empty cycles, drop the cluster requirement to 1
+
 // MG teams (not mortars) will break off early to deploy if they spot a live target while
 // still en route to their calculated standoff point.
 private _earlyEngageRange = 250;
@@ -140,9 +144,10 @@ private _fnc_findPos = {
 diag_log format ["[A3A Tweaks] Event-driven Support AI started for group: %1, Type: %2", groupID _group, _type];
 
 private _fnc_frontlinePos = {
-    params ["_objPos"];
+    params ["_objPos", ["_allowFallback", true, [true]]];
     ([_objPos] call A3A_fnc_planning_getAssaultAnchor) params ["_advanced","_anchorPos","_anchorDist"];
     if (_anchorDist >= 0) exitWith { [_anchorPos, true] };
+    if (!_allowFallback) exitWith { [_objPos, false] };
     private _nearEnemies = allUnits select { alive _x && {side _x in [Occupants, Invaders]} && {_x distance2D _objPos < 350} };
     if (count _nearEnemies > 0) exitWith { [(_nearEnemies select 0) call {getPosATL _this}, true] };
     [_objPos, false]
@@ -196,8 +201,18 @@ while {!_done} do {
         { doStop _x; } forEach (units _group);
         _reached = true;
     } else {
-        ([_curTargetPos] call _fnc_frontlinePos) params ["_biasPos","_haveBattlePoint"];
-        private _searchAnchor = if (_haveBattlePoint) then { _biasPos } else { _curTargetPos };
+        ([_curTargetPos, !_isFirstApproach] call _fnc_frontlinePos) params ["_biasPos","_haveBattlePoint"];
+
+        // Don't push up to standoff distance from the objective until our own assault
+        // squads have actually made contact — otherwise this fires from the very first
+        // tick (defenders are always "near" their own base) and sends support/vehicle
+        // elements right up to the enemy's doorstep alone.
+        if (!_haveBattlePoint) then {
+            sleep 10;
+            continue;
+        };
+
+        private _searchAnchor = _biasPos;
         private _deployPos = [_curTargetPos, _searchAnchor, _idealDist, _searchAnchor] call _fnc_findPos;
 
         // --- 1. Move to the support position ---
@@ -239,9 +254,12 @@ while {!_done} do {
         };
     };
 
+    _isFirstApproach = false;
+
     // --- 2. Assemble & occupy the emplacement ---
     _staticVeh = createVehicle [_staticClass, getPosATL (leader _group), [], 0, "NONE"];
     [_staticVeh, teamPlayer] call A3A_fnc_AIVEHinit;
+    _staticVeh allowCrewInImmobile true;
     _lastDeployTime = time;
     private _gunner = selectRandom (units _group);
     _watcher = ((units _group) - [_gunner]) param [0, objNull];
@@ -328,14 +346,18 @@ while {!_done} do {
                 };
                 _rankedTargets = [_rankedTargets, [], { _x select 2 }, "DESCEND"] call BIS_fnc_sortBy;
 
+                private _effectiveMinCluster = if (_clusterMissStreak >= _maxClusterMisses) then { 1 } else { _minClusterSize };
+
                 private _chosen = [];
                 {
                     _x params ["_cand", "_candPos", "_clusterCount"];
-                    if (_chosen isEqualTo [] && {_clusterCount >= _minClusterSize}) then {
+                    if (_chosen isEqualTo [] && {_clusterCount >= _effectiveMinCluster}) then {
                         private _alreadyClaimed = A3A_planning_activeMortarTargets findIf { (_x select 0) distance2D _candPos < 80 } != -1;
                         if (!_alreadyClaimed) then { _chosen = [_candPos, _clusterCount]; };
                     };
                 } forEach _rankedTargets;
+
+                if (_chosen isEqualTo []) then { _clusterMissStreak = _clusterMissStreak + 1; } else { _clusterMissStreak = 0; };
 
                 if (_chosen isNotEqualTo []) then {
                     _chosen params ["_impactBasePos", "_clusterCount"];
