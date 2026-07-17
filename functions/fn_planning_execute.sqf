@@ -38,10 +38,6 @@ if (_mode == "DEPLOY") then {
     publicVariable "A3A_planning_activeGroups";
     A3A_planning_captureTriggered = false;
     publicVariable "A3A_planning_captureTriggered";
-    A3A_planning_secureTimerStart = -1;
-    publicVariable "A3A_planning_secureTimerStart";
-    A3A_planning_instantGarrisonDone = false;
-    publicVariable "A3A_planning_instantGarrisonDone";
     diag_log "[A3A DEBUG] Stage 0: init vars OK";
 
     // --- DEFENSIVE VALIDATION & FALLBACK SYSTEM ---
