@@ -77,12 +77,64 @@ if (isNil "A3A_planning_initDone") then {
 
         A3A_fnc_planning_serverAddGarage = {
             params ["_vehicles"];
+
+            private _vehicleClasses = [];
             {
-                if (_x != "") then {
-                    vehInGarage pushBack _x;
+                private _class = "";
+                if (_x isEqualType objNull) then {
+                    if (!isNull _x) then {
+                        _class = typeOf _x;
+                    };
+                } else {
+                    if (_x isEqualType "") then {
+                        _class = _x;
+                    };
+                };
+
+                if (_class != "") then {
+                    _vehicleClasses pushBack _class;
+                    vehInGarage pushBack _class;
+                } else {
+                    diag_log format ["[A3A Planning Warning] Could not recover invalid siege vehicle entry: %1", _x];
                 };
             } forEach _vehicles;
+
             publicVariable "vehInGarage";
+
+            if (_vehicleClasses isEqualTo []) exitWith {
+                diag_log "[A3A Planning Warning] No valid siege vehicle classes were available to recover to the garage.";
+            };
+
+            if (isNil "HR_GRG_fnc_addVehiclesByClass") exitWith {
+                diag_log format ["[A3A Planning Warning] HR Garage function unavailable. Updated vehInGarage only for recovered vehicles: %1", _vehicleClasses];
+            };
+
+            private _garageClasses = [];
+            private _cfgVehicles = configFile >> "CfgVehicles";
+            {
+                if (!isClass (_cfgVehicles >> _x)) then {
+                    diag_log format ["[A3A Planning Warning] Cannot add recovered vehicle to HR Garage. Invalid class: %1", _x];
+                    continue;
+                };
+
+                if (!isNil "HR_GRG_fnc_getCatIndex" && {([_x] call HR_GRG_fnc_getCatIndex) < 0}) then {
+                    diag_log format ["[A3A Planning Warning] Cannot add recovered vehicle to HR Garage. Unsupported category: %1", _x];
+                    continue;
+                };
+
+                _garageClasses pushBack _x;
+            } forEach _vehicleClasses;
+
+            if (_garageClasses isEqualTo []) exitWith {
+                diag_log format ["[A3A Planning Warning] No recovered siege vehicles were accepted by HR Garage validation. Candidates: %1", _vehicleClasses];
+            };
+
+            private _added = [_garageClasses, ""] call HR_GRG_fnc_addVehiclesByClass;
+            if (_added) then {
+                diag_log format ["[A3A Planning] Recovered %1 siege vehicles to HR Garage: %2", count _garageClasses, _garageClasses];
+            } else {
+                diag_log format ["[A3A Planning Warning] HR Garage rejected recovered siege vehicles: %1", _garageClasses];
+            };
         };
     };
 

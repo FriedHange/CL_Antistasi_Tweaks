@@ -17,6 +17,77 @@ if (!isServer) exitWith {};
 
 diag_log "[A3A Ultimate Tweaks Extender] Starting flag-capture sector control loop...";
 
+private _fnc_spawnLoadedRebelGarrison = {
+    params ["_marker", "_unitTypes"];
+
+    if ((spawner getVariable [_marker, 2]) == 2 || {_unitTypes isEqualTo []}) exitWith {};
+
+    [_marker, _unitTypes] spawn {
+        params ["_marker", "_unitTypes"];
+
+        private _position = [_marker] call A3A_fnc_findAiSpawnPosition;
+        private _size = [_marker] call A3A_fnc_sizeMarker;
+        private _groupSize = missionNamespace getVariable ["A3A_rebelGarrisonGroupSize", 8];
+        if (_groupSize < 1) then { _groupSize = 8 };
+
+        private _groups = [];
+        private _soldiers = [];
+        private _garrisonTypes = (+_unitTypes) call A3A_fnc_garrisonReorg;
+        private _countUnits = 0;
+        private _totalUnits = count _garrisonTypes;
+
+        while {(spawner getVariable [_marker, 2]) != 2 && {_countUnits < _totalUnits}} do {
+            private _group = createGroup teamPlayer;
+            _groups pushBack _group;
+
+            for "_i" from 1 to _groupSize do {
+                if (_countUnits >= _totalUnits || {(spawner getVariable [_marker, 2]) == 2}) exitWith {};
+
+                private _type = _garrisonTypes select _countUnits;
+                private _unit = [_group, _type, _position, [], 0, "NONE"] call A3A_fnc_createUnit;
+                if (_type isEqualTo FactionGet(reb, "unitSL")) then { _group selectLeader _unit };
+                [_unit, _marker] call A3A_fnc_FIAinitBases;
+
+                if ((spawner getVariable [_marker, 2]) == 1 && {vehicle _unit == _unit}) then {
+                    _unit enableSimulationGlobal false;
+                };
+
+                _soldiers pushBack _unit;
+                _countUnits = _countUnits + 1;
+                sleep 0.25;
+            };
+
+            _group setBehaviour "AWARE";
+        };
+
+        for "_i" from 0 to (count _groups - 1) do {
+            private _group = _groups select _i;
+            if (isNull _group || {count units _group == 0}) then { continue };
+
+            if (_i == 0) then {
+                private _garrisonGroups = [_group, getMarkerPos _marker, _size] call A3A_fnc_patrolGroupGarrison;
+                if (count _garrisonGroups > 0) then {
+                    _groups append _garrisonGroups;
+                };
+            } else {
+                [_group, "Patrol_Defend", 0, 150, -1, true, getMarkerPos _marker, false] call A3A_fnc_patrolLoop;
+            };
+        };
+
+        diag_log format ["[A3A Planning] Spawned %1 captured siege garrison troops for loaded marker %2 in %3 groups.", count _soldiers, _marker, count (_groups select {!isNull _x})];
+
+        waitUntil {
+            sleep 1;
+            (spawner getVariable [_marker, 2]) == 2 || {(sidesX getVariable [_marker, sideUnknown]) != teamPlayer}
+        };
+
+        { if (alive _x) then { deleteVehicle _x } } forEach _soldiers;
+        { deleteGroup _x } forEach (_groups select {!isNull _x});
+
+        diag_log format ["[A3A Planning] Unloaded captured siege garrison troops for marker %1.", _marker];
+    };
+};
+
 // Shared handler: garrisons or refunds every currently active siege group and clears them.
 // Used both for the scripted auto-capture path and for a manually/externally captured marker.
 private _fnc_processCaptureRewards = {
@@ -54,12 +125,12 @@ private _fnc_processCaptureRewards = {
                 if (_captureAction == 1) then {
                     {
                         if (alive _x) then {
-                            _garrisonList pushBack (typeOf _x);
+                            _garrisonList pushBack (_x getVariable ["unitType", typeOf _x]);
                             _totalGarrisonedCount = _totalGarrisonedCount + 1;
                         };
                     } forEach _aliveUnits;
 
-                    { _allRecoveredVehicles pushBack (typeOf _x); } forEach _groupVehicles;
+                    { _allRecoveredVehicles pushBackUnique _x; } forEach _groupVehicles;
                 };
 
                 if (_captureAction == 2) then {
@@ -68,7 +139,6 @@ private _fnc_processCaptureRewards = {
                     _totalRefundHR = _totalRefundHR + round (_costHR * _ratio);
                 };
 
-                { deleteVehicle _x; } forEach _groupVehicles;
                 { deleteVehicle _x; } forEach _aliveUnits;
                 deleteGroup _group;
             };
@@ -77,14 +147,28 @@ private _fnc_processCaptureRewards = {
 
     if (count _allRecoveredVehicles > 0) then {
         [_allRecoveredVehicles] call A3A_fnc_planning_serverAddGarage;
+        { deleteVehicle _x; } forEach (_allRecoveredVehicles select {!isNull _x});
     };
 
     if (_captureAction == 1 && {_totalGarrisonedCount > 0}) then {
-        private _currentGarrison = garrison getVariable [_marker, []];
-        _currentGarrison append _garrisonList;
-        garrison setVariable [_marker, _currentGarrison, true];
+        private _sideWaitUntil = time + 5;
+        waitUntil {
+            sleep 0.1;
+            (sidesX getVariable [_marker, sideUnknown]) == teamPlayer || {time > _sideWaitUntil}
+        };
 
-        [garrison, _marker] remoteExec ["A3A_fnc_garrisonUpdate", 2];
+        if ((sidesX getVariable [_marker, sideUnknown]) == teamPlayer) then {
+            [_garrisonList, teamPlayer, _marker, 0] call A3A_fnc_garrisonUpdate;
+        } else {
+            private _currentGarrison = garrison getVariable [_marker, []];
+            _currentGarrison append _garrisonList;
+            garrison setVariable [_marker, _currentGarrison, true];
+            diag_log format ["[A3A Planning Warning] Added siege survivors to %1 garrison before marker side finished changing.", _marker];
+        };
+
+        if ((sidesX getVariable [_marker, sideUnknown]) == teamPlayer && {(spawner getVariable [_marker, 2]) != 2}) then {
+            [_marker, _garrisonList] call _fnc_spawnLoadedRebelGarrison;
+        };
 
         private _msg = format ["Garrisoned %1 surviving siege troops at %2.", _totalGarrisonedCount, markerText ("Dum" + _marker)];
         if (count _allRecoveredVehicles > 0) then {

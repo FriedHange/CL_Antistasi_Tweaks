@@ -197,9 +197,9 @@ class A3A {
         };
         class A3A_tweak_maxSiegeSquads : ExtenderParams {
             title = "Max Siege Squads";
-            tooltip = "The maximum number of squads that can participate in a siege (1 to 20).";
-            values[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20};
-            texts[] = {"1 Squad", "2 Squads", "3 Squads", "4 Squads", "5 Squads", "6 Squads", "7 Squads", "8 Squads", "9 Squads", "10 Squads (Default)", "11 Squads", "12 Squads", "13 Squads", "14 Squads", "15 Squads", "16 Squads", "17 Squads", "18 Squads", "19 Squads", "20 Squads"};
+            tooltip = "The maximum number of squads that can participate in a siege (1 to 10).";
+            values[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+            texts[] = {"1 Squad", "2 Squads", "3 Squads", "4 Squads", "5 Squads", "6 Squads", "7 Squads", "8 Squads", "9 Squads", "10 Squads (Default)"};
             default = 10;
         };
         class A3A_tweak_siegeRefundOrGarrison : ExtenderParams {
