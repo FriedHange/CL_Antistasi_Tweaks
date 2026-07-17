@@ -204,9 +204,9 @@ class A3A {
         };
         class A3A_tweak_siegeRefundOrGarrison : ExtenderParams {
             title = "Capture Reward Action";
-            tooltip = "Choose whether surviving siege troops are garrisoned at the captured outpost, refunded to the faction database, or left under player control.";
-            values[] = {0, 1, 2};
-            texts[] = {"Disabled (No Action)", "Garrison Surviving Troops", "Refund Surviving Troops (Money & HR)"};
+            tooltip = "Choose whether surviving siege troops are immediately garrisoned at the captured outpost or refunded to the faction database (Money & HR) the instant the objective is captured.";
+            values[] = {1, 2};
+            texts[] = {"Garrison Surviving Troops", "Refund Surviving Troops (Money & HR)"};
             default = 1;
         };
         class A3A_tweak_siegeTravelTimeMultiplier : ExtenderParams {
