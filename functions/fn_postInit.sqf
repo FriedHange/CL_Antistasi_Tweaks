@@ -9,8 +9,12 @@ diag_log "[A3A Ultimate Tweaks Extender] Initializing overrides...";
 A3A_fnc_selfRevive = compile preprocessFileLineNumbers "\CL_Antistasi_Tweaks\functions\fn_selfRevive.sqf";
 A3A_fnc_isWithinMarkerArea = compile preprocessFileLineNumbers "\CL_Antistasi_Tweaks\functions\fn_isWithinMarkerArea.sqf";
 
+// Override AI direct control functions to support configurable time limit and damage threshold
+SCRT_fnc_ai_possessFriendlyUnit = compile preprocessFileLineNumbers "\CL_Antistasi_Tweaks\functions\fn_ai_possessFriendlyUnit.sqf";
+A3A_fnc_controlunit = compile preprocessFileLineNumbers "\CL_Antistasi_Tweaks\functions\fn_controlunit.sqf";
+
 // Override builder placing objects function to support auto-building.
-// A3A_fnc_placeBuilderObjects is freshly compiled by CfgFunctions at every mission start,
+// A3A_fnc_placeBuilderObjects is freshly compiled by CfgFunctions at every mission start, 
 // so we always capture the real original here at postInit time.
 A3A_fnc_placeBuilderObjects_original = A3A_fnc_placeBuilderObjects;
 A3A_fnc_placeBuilderObjects = compile preprocessFileLineNumbers "\CL_Antistasi_Tweaks\functions\fn_placeBuilderObjects.sqf";
@@ -39,7 +43,7 @@ SCRT_fnc_ui_populateCommanderMenu = compile preprocessFileLineNumbers "\CL_Antis
 SCRT_fnc_ui_changeTab_original = SCRT_fnc_ui_changeTab;
 SCRT_fnc_ui_changeTab = compile preprocessFileLineNumbers "\CL_Antistasi_Tweaks\functions\fn_ui_changeTab.sqf";
 
-// Compile planning functions
+// compile planning functions
 A3A_fnc_planning_init = compile preprocessFileLineNumbers "\CL_Antistasi_Tweaks\functions\fn_planning_init.sqf";
 A3A_fnc_planning_cacheVehicles = compile preprocessFileLineNumbers "\CL_Antistasi_Tweaks\functions\fn_planning_cacheVehicles.sqf";
 A3A_fnc_planning_ui = compile preprocessFileLineNumbers "\CL_Antistasi_Tweaks\functions\fn_planning_ui.sqf";
@@ -51,72 +55,81 @@ A3A_fnc_planning_showNotification = compile preprocessFileLineNumbers "\CL_Antis
 
 // Global locality wrappers for planning system
 A3A_fnc_planning_localCleanupMarkers = {
-    params [["_deleteAll", false, [false]]];
-    if (hasInterface) then {
-        if (_deleteAll) then {
-            if ("A3A_planning_AO" in allMapMarkers) then { deleteMarkerLocal "A3A_planning_AO"; };
-        };
-        {
-            deleteMarkerLocal ("A3A_planning_entry_" + _x);
-        } forEach ["Alpha", "Beta", "Gamma", "Delta"];
-        A3A_planning_entryPoints = [];
-        A3A_planning_objective = "";
-        A3A_planning_queue = [];
-    };
+	params [["_deleteAll", false, [false]]];
+	if (hasInterface) then {
+		if (_deleteAll) then {
+			if ("A3A_planning_AO" in allMapMarkers) then {
+				deleteMarkerLocal "A3A_planning_AO";
+			};
+		};
+		{
+			deleteMarkerLocal ("A3A_planning_entry_" + _x);
+		} forEach ["Alpha", "Beta", "Gamma", "Delta"];
+		A3A_planning_entryPoints = [];
+		A3A_planning_objective = "";
+		A3A_planning_queue = [];
+	};
+	// Clean up travel and tracking markers globally
+	{
+		if ((_x find "A3A_planning_travel_") == 0 || { (_x find "A3A_planning_track_") == 0 }) then {
+			deleteMarker _x;
+		};
+	} forEach allMapMarkers;
 };
 
 A3A_fnc_planning_localAddHC = {
-    params [["_group", groupNull, [groupNull]]];
-    if (isNull _group) exitWith {};
-    if (hasInterface) then {
-        player hcSetGroup [_group];
-        diag_log format ["[A3A Planning] Added group %1 to player's High Command.", groupID _group];
-    };
+	params [["_group", grpNull, [grpNull]]];
+	if (isNull _group) exitWith {};
+	if (hasInterface) then {
+		player hcSetGroup [_group];
+		diag_log format ["[A3A Planning] Added group %1 to player's High Command.", groupId _group];
+	};
 };
 
 A3A_fnc_planning_localSideChat = {
-    params [["_message", "", [""]]];
-    if (_message == "") exitWith {};
-    if (hasInterface) then {
-        [teamPlayer, "HQ"] sideChat _message;
-    };
+	params [["_message", "", [""]]];
+	if (_message == "") exitWith {};
+	diag_log format ["[A3A Planning Radio] %1", _message];
+	if (hasInterface) then {
+		[teamPlayer, "HQ"] sideChat _message;
+		systemChat format ["[HQ]: %1", _message];
+	};
 };
 
 A3A_fnc_planning_localSetCurrentWaypoint = {
-    params ["_group", "_wpIndex"];
-    _group setCurrentWaypoint [_group, _wpIndex];
+	params ["_group", "_wpIndex"];
+	_group setCurrentWaypoint [_group, _wpIndex];
 };
 
 A3A_fnc_planning_localMoveInGunner = {
-    params ["_unit", "_vehicle"];
-    _unit assignAsGunner _vehicle;
-    _unit moveInGunner _vehicle;
+	params ["_unit", "_vehicle"];
+	_unit assignAsGunner _vehicle;
+	_unit moveInGunner _vehicle;
 };
 
 A3A_fnc_planning_localDoWatch = {
-    params ["_unit", "_pos"];
-    _unit doWatch _pos;
+	params ["_unit", "_pos"];
+	_unit doWatch _pos;
 };
 
 A3A_fnc_planning_localArtilleryFire = {
-    params ["_vehicle", "_pos", "_mag", "_count"];
-    _vehicle commandArtilleryFire [_pos, _mag, _count];
+	params ["_vehicle", "_pos", "_mag", "_count"];
+	_vehicle commandArtilleryFire [_pos, _mag, _count];
 };
 
 A3A_fnc_planning_localGetOut = {
-    params ["_unit", "_vehicle"];
-    unassignVehicle _unit;
-    [_unit] orderGetIn false;
-    _unit action ["GetOut", _vehicle];
+	params ["_unit", "_vehicle"];
+	unassignVehicle _unit;
+	[_unit] orderGetIn false;
+	_unit action ["GetOut", _vehicle];
 };
 
 A3A_fnc_planning_localDoMove = {
-    params ["_unit", "_pos"];
-    _unit doMove _pos;
+	params ["_unit", "_pos"];
+	_unit doMove _pos;
 };
 // Initialize planning variables and loops
 [] call A3A_fnc_planning_init;
-
 
 // Sync lobby parameters from server to all clients
 if (isServer) then {
@@ -141,7 +154,10 @@ if (isServer) then {
 			["A3A_tweak_discoveryDistance", 200],
 			["A3A_tweak_maxSiegeSquads", 10],
 			["A3A_tweak_siegeRefundOrGarrison", 1],
-			["A3A_tweak_siegeTravelTimeMultiplier", 1]
+			["A3A_tweak_siegeTravelTimeMultiplier", 1],
+			["A3A_tweak_aiControlTimeOverride", 120],
+			["A3A_tweak_aiControlDamageThreshold", 0],
+			["A3A_tweak_unconsciousRespawnKey", 19]
 		];
 	};
 
@@ -229,3 +245,96 @@ if (isServer) then {
 
 	// Overrides applied
 	diag_log "[A3A Ultimate Tweaks Extender] Overrides applied.";
+
+// =====================================================
+// WRAP UNCONSCIOUS KEY EVENT HANDLERS
+// =====================================================
+if (hasInterface) then {
+    [] spawn {
+        // Wait for mission initialization to complete so functions are defined
+        waitUntil {
+            sleep 1;
+            !isNil "SCRT_fnc_common_unconsciousEventHandler" || { !isNil "A3A_fnc_unconsciousEventHandler" || { time > 15 } }
+        };
+
+        if (!isNil "SCRT_fnc_common_unconsciousEventHandler") then {
+            diag_log "[A3A Ultimate Tweaks Extender] Wrapping SCRT_fnc_common_unconsciousEventHandler...";
+            SCRT_fnc_common_unconsciousEventHandler_original = SCRT_fnc_common_unconsciousEventHandler;
+            SCRT_fnc_common_unconsciousEventHandler = {
+                params ["_display", "_key", "_shift", "_ctrl", "_alt"];
+                private _targetKey = missionNamespace getVariable ["A3A_tweak_unconsciousRespawnKey", 19];
+                
+                if (_targetKey == 0) exitWith {
+                    if (_key == 19) then {
+                        private _lastPress = player getVariable ["CL_tweaks_lastUnconsciousRPress", 0];
+                        if (time - _lastPress < 1.5) then {
+                            _this call SCRT_fnc_common_unconsciousEventHandler_original;
+                        } else {
+                            player setVariable ["CL_tweaks_lastUnconsciousRPress", time];
+                            [localize "STR_control_unit_hint_header", "Double-press R to Respawn"] call A3A_fnc_customHint;
+                        };
+                        true
+                    } else {
+                        _this call SCRT_fnc_common_unconsciousEventHandler_original;
+                    };
+                };
+
+                if (_targetKey != 19) then {
+                    if (_key == _targetKey) then {
+                        private _remappedParams = [_display, 19, _shift, _ctrl, _alt];
+                        _remappedParams call SCRT_fnc_common_unconsciousEventHandler_original;
+                        true
+                    } else {
+                        if (_key == 19) then {
+                            true
+                        } else {
+                            _this call SCRT_fnc_common_unconsciousEventHandler_original;
+                        };
+                    };
+                } else {
+                    _this call SCRT_fnc_common_unconsciousEventHandler_original;
+                };
+            };
+        };
+
+        if (!isNil "A3A_fnc_unconsciousEventHandler") then {
+            diag_log "[A3A Ultimate Tweaks Extender] Wrapping A3A_fnc_unconsciousEventHandler...";
+            A3A_fnc_unconsciousEventHandler_original = A3A_fnc_unconsciousEventHandler;
+            A3A_fnc_unconsciousEventHandler = {
+                params ["_display", "_key", "_shift", "_ctrl", "_alt"];
+                private _targetKey = missionNamespace getVariable ["A3A_tweak_unconsciousRespawnKey", 19];
+                
+                if (_targetKey == 0) exitWith {
+                    if (_key == 19) then {
+                        private _lastPress = player getVariable ["CL_tweaks_lastUnconsciousRPress", 0];
+                        if (time - _lastPress < 1.5) then {
+                            _this call A3A_fnc_unconsciousEventHandler_original;
+                        } else {
+                            player setVariable ["CL_tweaks_lastUnconsciousRPress", time];
+                            [localize "STR_control_unit_hint_header", "Double-press R to Respawn"] call A3A_fnc_customHint;
+                        };
+                        true
+                    } else {
+                        _this call A3A_fnc_unconsciousEventHandler_original;
+                    };
+                };
+
+                if (_targetKey != 19) then {
+                    if (_key == _targetKey) then {
+                        private _remappedParams = [_display, 19, _shift, _ctrl, _alt];
+                        _remappedParams call A3A_fnc_unconsciousEventHandler_original;
+                        true
+                    } else {
+                        if (_key == 19) then {
+                            true
+                        } else {
+                            _this call A3A_fnc_unconsciousEventHandler_original;
+                        };
+                    };
+                } else {
+                    _this call A3A_fnc_unconsciousEventHandler_original;
+                };
+            };
+        };
+    };
+};

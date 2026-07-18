@@ -205,8 +205,8 @@ class A3A {
         class A3A_tweak_siegeRefundOrGarrison : ExtenderParams {
             title = "Capture Reward Action";
             tooltip = "Choose whether surviving siege troops are garrisoned at the captured outpost, refunded to the faction database, or left under player control.";
-            values[] = {0, 1, 2};
-            texts[] = {"Disabled (No Action)", "Garrison Surviving Troops", "Refund Surviving Troops (Money & HR)"};
+            values[] = {1, 2};
+            texts[] = {"Garrison Surviving Troops", "Refund Surviving Troops (Money & HR)"};
             default = 1;
         };
         class A3A_tweak_siegeTravelTimeMultiplier : ExtenderParams {
@@ -216,6 +216,39 @@ class A3A {
             texts[] = {"Instant", "10x Faster", "4x Faster", "2x Faster", "Default", "2x Slower"};
             default = 1;
         };
+
+        // =====================================================
+        // CL ANTISTASI TWEAKS - AI DIRECT CONTROL
+        // =====================================================
+        class CL_Tweaks_AIControl_Spacer : ExtenderParams {
+            title = "--- CL Tweaks: AI Direct Control ---";
+            tooltip = "Settings for directly controlling AI units.";
+            values[] = {0};
+            texts[] = {""};
+            default = 0;
+        };
+        class A3A_tweak_aiControlTimeOverride : ExtenderParams {
+            title = "AI Control Time Limit";
+            tooltip = "Maximum duration a player can directly control an AI unit. Overrides the base Antistasi setting. 'Unlimited' removes the timer entirely.";
+            values[] = {120, 180, 300, 600, -1};
+            texts[] = {"2 min (Default)", "3 min", "5 min", "10 min", "Unlimited"};
+            default = 120;
+        };
+        class A3A_tweak_aiControlDamageThreshold : ExtenderParams {
+            title = "AI Control Damage Cancellation";
+            tooltip = "How much cumulative damage the controlled AI unit must receive before control is forcibly returned to the player. 'Any damage' restores vanilla behaviour.";
+            values[] = {0, 99};
+            texts[] = {"Any damage (Vanilla)", "Incapacitated / Dead only"};
+            default = 0;
+        };
+        class A3A_tweak_unconsciousRespawnKey : ExtenderParams {
+            title = "Unconscious Respawn Key / Protection (REQUIRES SERVER RESTART)";
+            tooltip = "Rebinds the 'Hold R to Respawn' action during unconsciousness to another key, or requires a double-press of R to prevent accidental deaths.";
+            values[] = {19, 0, 20, 21, 22, 57};
+            texts[] = {"R (Default)", "Double-press R (Confirmation)", "T", "Y", "U", "Space"};
+            default = 19;
+        };
     };
 };
+
 
