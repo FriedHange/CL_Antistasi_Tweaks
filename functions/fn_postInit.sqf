@@ -155,6 +155,7 @@ if (isServer) then {
 			["A3A_tweak_maxSiegeSquads", 10],
 			["A3A_tweak_siegeRefundOrGarrison", 1],
 			["A3A_tweak_siegeTravelTimeMultiplier", 1],
+			["A3A_tweak_siegeCooldown", 600],
 			["A3A_tweak_aiControlTimeOverride", 120],
 			["A3A_tweak_aiControlDamageThreshold", 0],
 			["A3A_tweak_unconsciousRespawnKey", 19]

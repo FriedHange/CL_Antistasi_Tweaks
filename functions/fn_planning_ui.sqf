@@ -558,6 +558,19 @@ if (isNull _controlsGroup) then {
 	_ctrlBtnCommence ctrlSetFade 0;
 	_ctrlBtnCommence ctrlCommit 0;
 
+	private _uiCooldownSecs = missionNamespace getVariable ["A3A_tweak_siegeCooldown", 600];
+	if (_uiCooldownSecs > 0) then {
+		private _lastTime = missionNamespace getVariable ["A3A_planning_lastCommenceTime", -9999];
+		private _elapsed = time - _lastTime;
+		if (_elapsed < _uiCooldownSecs) then {
+			private _remSecs = ceil (_uiCooldownSecs - _elapsed);
+			private _remMin = floor (_remSecs / 60);
+			private _remSec = _remSecs % 60;
+			private _timeStr = if (_remMin > 0) then { format ["%1m %2s", _remMin, _remSec] } else { format ["%1s", _remSec] };
+			_ctrlBtnCommence ctrlSetTooltip format ["Siege Planner is on cooldown (%1 remaining)", _timeStr];
+		};
+	};
+
 	private _ctrlBtnClear = _display ctrlCreate ["ButtonBase", 8027, _controlsGroup];
 	_ctrlBtnClear ctrlSetPosition [1 * _uW, 45 * _uH, 22 * _uW, 2.5 * _uH];
 	_ctrlBtnClear ctrlSetText "Clear Plan";
@@ -578,6 +591,22 @@ if (isNull _controlsGroup) then {
 		if (count A3A_planning_queue == 0) exitWith {
 			["Denied", "You must queue at least one squad to deploy.", true] call A3A_fnc_planning_showNotification;
 		};
+
+		// Check configurable siege cooldown
+		private _cooldownSecs = missionNamespace getVariable ["A3A_tweak_siegeCooldown", 600];
+		if (_cooldownSecs > 0) then {
+			private _lastTime = missionNamespace getVariable ["A3A_planning_lastCommenceTime", -9999];
+			private _elapsed = time - _lastTime;
+			if (_elapsed < _cooldownSecs) exitWith {
+				private _remSecs = ceil (_cooldownSecs - _elapsed);
+				private _remMin = floor (_remSecs / 60);
+				private _remSec = _remSecs % 60;
+				private _timeStr = if (_remMin > 0) then { format ["%1m %2s", _remMin, _remSec] } else { format ["%1s", _remSec] };
+				["Cooldown Active", format ["Siege Planner is on cooldown. Please wait %1 before launching another operation.", _timeStr], true] call A3A_fnc_planning_showNotification;
+			};
+		};
+		private _lastTimeCheck = missionNamespace getVariable ["A3A_planning_lastCommenceTime", -9999];
+		if (_cooldownSecs > 0 && { (time - _lastTimeCheck) < _cooldownSecs }) exitWith {};
 
 		private _totalMoney = 0;
 		private _totalHR = 0;
@@ -612,6 +641,10 @@ if (isNull _controlsGroup) then {
 		closeDialog 0;
 
 		["Siege Commenced", "All recruited squads have departed HQ. Watch for radio progress transmissions!", false] call A3A_fnc_planning_showNotification;
+
+		// Record and broadcast commence timestamp for cooldown tracking
+		A3A_planning_lastCommenceTime = time;
+		publicVariable "A3A_planning_lastCommenceTime";
 
 		A3A_planning_queue = [];
 

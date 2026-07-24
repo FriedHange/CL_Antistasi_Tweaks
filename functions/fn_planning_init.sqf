@@ -16,6 +16,7 @@ if (isNil "A3A_planning_initDone") then {
 	    A3A_planning_assaultStarted = false;         // Assault state for progressive capture loop compatibility
 	    A3A_planning_activeGroups = [];              // Track deployed groups for refund/garrison
 	    A3A_planning_captureTriggered = false;       // Sector capture trigger state
+	    A3A_planning_lastCommenceTime = -9999;       // Last siege commencement timestamp for cooldown check
 
 	    // UI Helpers
 	    A3A_planning_includeVehicle = true;          // Checkbox state for including vehicles

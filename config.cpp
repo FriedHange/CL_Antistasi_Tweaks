@@ -216,6 +216,13 @@ class A3A {
             texts[] = {"Instant", "10x Faster", "4x Faster", "2x Faster", "Default", "2x Slower"};
             default = 1;
         };
+        class A3A_tweak_siegeCooldown : ExtenderParams {
+            title = "Siege Planner Cooldown";
+            tooltip = "Minimum wait time after commencing a siege before commanders can plan/commence another siege operation.";
+            values[] = {0, 300, 600, 900, 1200, 1800};
+            texts[] = {"Disabled (No Cooldown)", "5 Minutes", "10 Minutes (Default)", "15 Minutes", "20 Minutes", "30 Minutes"};
+            default = 600;
+        };
 
         // =====================================================
         // CL ANTISTASI TWEAKS - AI DIRECT CONTROL

@@ -37,8 +37,12 @@ if (_mode == "DEPLOY") then {
 	A3A_planning_autoCapture = _autoCapture;
 	publicVariable "A3A_planning_autoCapture";
 
-	    // Reset active siege groups
-	A3A_planning_activeGroups = [];
+	// Preserve active groups from ongoing sieges while cleaning up dead/null ones
+	if (isNil "A3A_planning_activeGroups") then {
+		A3A_planning_activeGroups = [];
+	} else {
+		A3A_planning_activeGroups = A3A_planning_activeGroups select { !isNull _x && { count (units _x) > 0 } };
+	};
 	publicVariable "A3A_planning_activeGroups";
 	A3A_planning_captureTriggered = false;
 	publicVariable "A3A_planning_captureTriggered";
