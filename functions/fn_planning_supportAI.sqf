@@ -82,12 +82,12 @@ private _idealDist = if (_isMortar) then {
 	100
 };   // Mortar ~100-150m behind frontline (was 500m) / MG ~100m behind frontline
 private _maxDist = if (_isMortar) then {
-	700
+	3500
 } else {
 	180
 };   // "frontline/targets out of effective range"
 private _dangerDist = if (_isMortar) then {
-	150
+	35
 } else {
 	50
 };    // "position heavily threatened"
@@ -625,19 +625,19 @@ while { !_done } do {
 			_cNoTargets = 0;
 		};
 
-		if (_cRange >= _confirmNeeded && {
+		if (!_isMortar && { _cRange >= _confirmNeeded } && {
 			(time - _lastDeployTime) > _minDwellTime
 		}) exitWith {
 			_relocate = true;
 			diag_log "[A3A Tweaks] Relocating: frontline out of effective range.";
 		};
-		if (_cLOS >= _confirmNeeded && {
+		if (!_isMortar && { _cLOS >= _confirmNeeded } && {
 			(time - _lastDeployTime) > _minDwellTime
 		}) exitWith {
 			_relocate = true;
 			diag_log "[A3A Tweaks] Relocating: LOS to the battle lost.";
 		};
-		if (_cNoTargets >= _confirmNeeded && {
+		if (!_isMortar && { _cNoTargets >= _confirmNeeded } && {
 			(time - _lastDeployTime) > _minDwellTime
 		}) exitWith {
 			_relocate = true;

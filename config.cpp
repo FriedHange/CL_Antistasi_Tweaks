@@ -216,12 +216,12 @@ class A3A {
             texts[] = {"Instant", "10x Faster", "4x Faster", "2x Faster", "Default", "2x Slower"};
             default = 1;
         };
-        class A3A_tweak_siegeCooldown : ExtenderParams {
-            title = "Siege Planner Cooldown";
-            tooltip = "Minimum wait time after commencing a siege before commanders can plan/commence another siege operation.";
-            values[] = {0, 300, 600, 900, 1200, 1800};
-            texts[] = {"Disabled (No Cooldown)", "5 Minutes", "10 Minutes (Default)", "15 Minutes", "20 Minutes", "30 Minutes"};
-            default = 600;
+        class A3A_tweak_siegeDeploymentMultiplier : ExtenderParams {
+            title = "Strategic Deployment Multiplier";
+            tooltip = "Multiplier applied to native Antistasi recruitment costs for siege operations to represent strategic planning logistics.";
+            values[] = {0.5, 0.75, 1, 1.25, 1.5, 2, 3};
+            texts[] = {"0.5x", "0.75x", "1.0x", "1.25x", "1.5x", "2.0x", "3.0x"};
+            default = 1.25;
         };
 
         // =====================================================

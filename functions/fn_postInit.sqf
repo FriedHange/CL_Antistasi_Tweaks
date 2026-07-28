@@ -51,6 +51,7 @@ A3A_fnc_planning_execute = compile preprocessFileLineNumbers "\CL_Antistasi_Twea
 A3A_fnc_planning_sectorControl = compile preprocessFileLineNumbers "\CL_Antistasi_Tweaks\functions\fn_planning_sectorControl.sqf";
 A3A_fnc_planning_supportAI = compile preprocessFileLineNumbers "\CL_Antistasi_Tweaks\functions\fn_planning_supportAI.sqf";
 A3A_fnc_planning_vehicleOverwatch = compile preprocessFileLineNumbers "\CL_Antistasi_Tweaks\functions\fn_planning_vehicleOverwatch.sqf";
+A3A_fnc_planning_airOverwatch = compile preprocessFileLineNumbers "\CL_Antistasi_Tweaks\functions\fn_planning_airOverwatch.sqf";
 A3A_fnc_planning_showNotification = compile preprocessFileLineNumbers "\CL_Antistasi_Tweaks\functions\fn_planning_showNotification.sqf";
 
 // Global locality wrappers for planning system
@@ -155,7 +156,7 @@ if (isServer) then {
 			["A3A_tweak_maxSiegeSquads", 10],
 			["A3A_tweak_siegeRefundOrGarrison", 1],
 			["A3A_tweak_siegeTravelTimeMultiplier", 1],
-			["A3A_tweak_siegeCooldown", 600],
+			["A3A_tweak_siegeDeploymentMultiplier", 1.25],
 			["A3A_tweak_aiControlTimeOverride", 120],
 			["A3A_tweak_aiControlDamageThreshold", 0],
 			["A3A_tweak_unconsciousRespawnKey", 19]

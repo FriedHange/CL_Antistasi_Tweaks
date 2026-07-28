@@ -156,6 +156,12 @@ if (_tier >= 8) then {
     if (_tank != "") then { _menuItems pushBack ["Combat Tank", "12"]; };
 };
 
+// Always offer garage crew deployment when the HQ Garage has vehicles available
+private _availableGarageVehs = call A3A_fnc_planning_getAvailableGarageVehicles;
+if (count _availableGarageVehs > 0) then {
+    _menuItems pushBack ["Vehicle Crew (HQ Garage)", "14"];
+};
+
 A3A_planning_cachedVehicles set ["MENU_ITEMS", _menuItems];
 
 diag_log format ["[A3A Ultimate Tweaks Extender] Siege Planner vehicle cache ready. WL %1 menu items: %2",

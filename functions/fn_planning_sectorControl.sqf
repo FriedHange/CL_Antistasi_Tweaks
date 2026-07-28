@@ -36,60 +36,68 @@ private _fnc_postCapture = {
 			if (!isNull _group && {
 				count (units _group) > 0
 			}) then {
-				private _costMoney = _group getVariable ["siege_costMoney", 0];
-				private _costHR = _group getVariable ["siege_costHR", 0];
-				private _originalCount = _group getVariable ["siege_originalCount", 0];
+				// AIR_CREW groups manage their own recovery via fn_planning_airOverwatch.
+				// Skip them here to avoid double-processing.
+				private _role = _group getVariable ["siege_role", "ASSAULT"];
+				if (_role == "AIR_CREW") then {
+					diag_log format ["[A3A Planning] sectorControl: skipping AIR_CREW group %1 (managed by airOverwatch).", groupId _group];
+				} else {
+					private _costMoney = _group getVariable ["siege_costMoney", 0];
+					private _costHR = _group getVariable ["siege_costHR", 0];
+					private _originalCount = _group getVariable ["siege_originalCount", 0];
 
-				private _aliveUnits = (units _group) select {
-					alive _x
-				};
-				private _aliveCount = count _aliveUnits;
+					private _aliveUnits = (units _group) select {
+						alive _x
+					};
+					private _aliveCount = count _aliveUnits;
 
-				if (_aliveCount > 0 && {
-					_originalCount > 0
-				}) then {
-					// Collect vehicles driven/carried by this group
-					private _groupVehicles = [];
-					{
-						private _veh = vehicle _x;
-						if (_veh != _x && {
-							alive _veh && {
-								!(_veh in _groupVehicles)
-							}
-						}) then {
-							_groupVehicles pushBack _veh;
-						};
-					} forEach _aliveUnits;
-
-					                    // --- Garrison mode ---
-					if (_captureAction == 1) then {
+					if (_aliveCount > 0 && {
+						_originalCount > 0
+					}) then {
+						// Collect vehicles driven/carried by this group
+						private _groupVehicles = [];
 						{
-							if (alive _x) then {
-								_garrisonList pushBack (typeOf _x);
-								_totalGarrisonedCount = _totalGarrisonedCount + 1;
+							private _veh = vehicle _x;
+							if (_veh != _x && {
+								alive _veh && {
+									!(_veh in _groupVehicles)
+								}
+							}) then {
+								_groupVehicles pushBack _veh;
 							};
 						} forEach _aliveUnits;
 
+						                    // --- Garrison mode ---
+						if (_captureAction == 1) then {
+							{
+								if (alive _x) then {
+									private _uType = _x getVariable ["unitType", typeOf _x];
+									_garrisonList pushBack _uType;
+									_totalGarrisonedCount = _totalGarrisonedCount + 1;
+								};
+							} forEach _aliveUnits;
+
+							{
+								_allRecoveredVehicles pushBack (typeOf _x);
+							} forEach _groupVehicles;
+						};
+
+						                    // --- Refund mode ---
+						if (_captureAction == 2) then {
+							private _ratio = _aliveCount / _originalCount;
+							_totalRefundMoney = _totalRefundMoney + round (_costMoney * _ratio);
+							_totalRefundHR = _totalRefundHR + round (_costHR * _ratio);
+						};
+
+						                    // Clean up world objects (classnames already captured above)
 						{
-							_allRecoveredVehicles pushBack (typeOf _x);
+							deleteVehicle _x;
 						} forEach _groupVehicles;
+						{
+							deleteVehicle _x;
+						} forEach _aliveUnits;
+						deleteGroup _group;
 					};
-
-					                    // --- Refund mode ---
-					if (_captureAction == 2) then {
-						private _ratio = _aliveCount / _originalCount;
-						_totalRefundMoney = _totalRefundMoney + round (_costMoney * _ratio);
-						_totalRefundHR = _totalRefundHR + round (_costHR * _ratio);
-					};
-
-					                    // Clean up world objects (classnames already captured above)
-					{
-						deleteVehicle _x;
-					} forEach _groupVehicles;
-					{
-						deleteVehicle _x;
-					} forEach _aliveUnits;
-					deleteGroup _group;
 				};
 			};
 		} forEach A3A_planning_activeGroups;
@@ -174,11 +182,7 @@ private _fnc_postCapture = {
 while { true } do {
 	sleep 8;
 
-	if (!isNil "A3A_planning_objective" && {
-		A3A_planning_objective != "" && {
-			A3A_planning_assaultStarted
-		}
-	}) then {
+	if (call A3A_fnc_planning_isSiegeActive) then {
 		private _marker = A3A_planning_objective;
 		private _side = sidesX getVariable [_marker, sideUnknown];
 		private _targetPos = getMarkerPos _marker;
@@ -209,12 +213,51 @@ while { true } do {
 			};
 			private _autoCapture = missionNamespace getVariable ["A3A_planning_autoCapture", true];
 
-			            // Only ASSAULT (and vehicle crew) squads are ever eligible to physically walk onto and
-			private _hasAssaultOrCrew = {
-				(_x getVariable ["siege_role", "ASSAULT"]) in ["ASSAULT", "CREW"]
+			// Only ASSAULT infantry squads are eligible to physically walk onto the flag pole while available.
+			private _hasAssault = {
+				(_x getVariable ["siege_role", "ASSAULT"]) == "ASSAULT"
 			} count _aliveGroups > 0;
 
-			private _captureEligibleRoles = if (_hasAssaultOrCrew) then { ["ASSAULT", "CREW"] } else { ["ASSAULT", "CREW", "VEHICLE"] };
+			// Maintain aggressive assault momentum & extract infantry stuck in buildings
+			{
+				if ((_x getVariable ["siege_role", "ASSAULT"]) == "ASSAULT") then {
+					private _ldr = leader _x;
+					if (alive _ldr) then {
+						private _lastPos = _x getVariable ["siege_lastPos", [0, 0, 0]];
+						private _stuckCount = _x getVariable ["siege_stuckCount", 0];
+						private _curPos = getPosATL _ldr;
+
+						if (_curPos distance2D _lastPos < 2.5 && { _curPos distance2D _targetPos > 25 }) then {
+							_stuckCount = _stuckCount + 1;
+							_x setVariable ["siege_stuckCount", _stuckCount];
+
+							if (_stuckCount >= 3) then { // Stuck for > 24 seconds
+								diag_log format ["[A3A Planning] Un-sticking squad %1 stuck near building at %2", groupId _x, _curPos];
+								_x setBehaviour "AWARE";
+								_x setSpeedMode "FULL";
+								_x setFormation "LINE";
+								{
+									if (alive _x && { vehicle _x == _x }) then {
+										_x setUnitPos "UP";
+										private _dest = _targetPos vectorAdd [random 20 - 10, random 20 - 10, 0];
+										_x doMove _dest;
+									};
+								} forEach (units _x);
+								_x setVariable ["siege_stuckCount", 0];
+							};
+						} else {
+							_x setVariable ["siege_lastPos", _curPos];
+							_x setVariable ["siege_stuckCount", 0];
+							if ((behaviour _ldr) in ["COMBAT", "STEALTH"]) then {
+								_x setSpeedMode "FULL";
+								_x setFormation "LINE";
+							};
+						};
+					};
+				};
+			} forEach _aliveGroups;
+
+			private _captureEligibleRoles = if (_hasAssault) then { ["ASSAULT"] } else { ["ASSAULT", "VEHICLE"] };
 
 			private _captureEligibleGroups = _aliveGroups select {
 				(_x getVariable ["siege_role", "ASSAULT"]) in _captureEligibleRoles
@@ -242,11 +285,11 @@ while { true } do {
 						};
 						private _wp = _closestGroup addWaypoint [_targetPos, 0];
 						_wp setWaypointType "MOVE";
-						_wp setWaypointBehaviour "CARELESS";
+						_wp setWaypointBehaviour "AWARE";
 						_wp setWaypointSpeed "FULL";
 						[_closestGroup, _wp select 1] remoteExec ["A3A_fnc_planning_localSetCurrentWaypoint", groupOwner _closestGroup];
 
-						_closestGroup setBehaviour "CARELESS";
+						_closestGroup setBehaviour "AWARE";
 						_closestGroup setSpeedMode "FULL";
 					};
 
@@ -316,11 +359,8 @@ while { true } do {
 							params ["_marker", "_fnc_postCapture"];
 							// Wait up to 5s for markerChange to flip the side variable
 							private _timeout = time + 5;
-							waitUntil {
+							while { (sidesX getVariable [_marker, sideUnknown]) != teamPlayer && { time < _timeout } } do {
 								sleep 0.5;
-								(sidesX getVariable [_marker, sideUnknown]) == teamPlayer || {
-									time > _timeout
-								}
 							};
 							[_marker] call _fnc_postCapture;
 						};

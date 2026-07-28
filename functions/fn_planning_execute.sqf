@@ -11,7 +11,7 @@ params [
 	["_params", [], [[]]]
 ];
 
-if (_mode == "DEPLOY") then {
+if (_mode in ["DEPLOY", "REINFORCE"]) then {
 	_params params [
 		["_totalMoney", 0, [0]],
 		["_totalHR", 0, [0]],
@@ -281,20 +281,178 @@ if (_mode == "DEPLOY") then {
 		private _group = grpNull;
 		private _vehicle = objNull;
 
-		        // --- STAGE 1: Creation only. Nothing here decides waypoints/behavior. ---
-		try {
-			if (_vehType != "" && {
-				isClass (configFile >> "CfgVehicles" >> _vehType)
-			}) then {
-				diag_log format ["[A3A Planning] Spawning vehicle %1 at %2...", _vehType, _spawnPos];
-				_vehicle = createVehicle [_vehType, _spawnPos, [], 10, "NONE"];
-				if (!isNull _vehicle) then {
-					[_vehicle, teamPlayer] call A3A_fnc_AIVEHinit;
-				} else {
-					diag_log format ["[A3A Planning Error] Failed to create vehicle %1 at %2.", _vehType, _spawnPos];
+		// --- STAGE 1: Vehicle creation for non-GarageCrew squads.
+		// GarageCrew manages its own vehicle lifecycle in the block below.
+		if (_special != "GarageCrew" && { _vehType != "" } && {
+			isClass (configFile >> "CfgVehicles" >> _vehType)
+		}) then {
+			diag_log format ["[A3A Planning] Spawning vehicle %1 at %2...", _vehType, _spawnPos];
+			_vehicle = createVehicle [_vehType, _spawnPos, [], 10, "NONE"];
+			if (!isNull _vehicle) then {
+				[_vehicle, teamPlayer] call A3A_fnc_AIVEHinit;
+			} else {
+				diag_log format ["[A3A Planning Error] Failed to create vehicle %1 at %2.", _vehType, _spawnPos];
+			};
+		};
+
+
+
+		// GarageCrew: crew is generated from the vehicle itself via createVehicleCrew.
+		// _unitTypes is [] so spawnGroup would produce an empty group; create one manually.
+		if (_special == "GarageCrew") then {
+			// Determine whether this is an air asset so Stage 1 can pick the right spawn location.
+			private _isHeliCrew = (_vehType != "" && { _vehType isKindOf "Helicopter" });
+			private _isPlaneCrew = (_vehType != "" && { _vehType isKindOf "Plane" });
+			private _isAirCrew = _isHeliCrew || _isPlaneCrew;
+
+			// --- Pick the vehicle's actual spawn position (separate from the staging-point _spawnPos) ---
+			private _vehicleSpawnPos = _spawnPos; // default: staging point (ground vehicles)
+
+			if (_isAirCrew) then {
+				private _infra = call A3A_fnc_planning_getFriendlyInfrastructure;
+				_infra params ["_hasHelipad", "_hasAirfield", "_friendlyHelipads", "_friendlyAirfields"];
+
+				if (_isHeliCrew) then {
+					// Nearest friendly helipad/military base/outpost location, spawned airborne
+					private _bestMarker = if (count _friendlyHelipads > 0) then { _friendlyHelipads select 0 } else { "respawn_west" };
+					private _bestDist = 1e9;
+					{
+						private _mPos = getMarkerPos _x;
+						if (_mPos isNotEqualTo [0,0,0]) then {
+							private _d = _mPos distance2D _targetPos;
+							if (_d < _bestDist) then { _bestDist = _d; _bestMarker = _x; };
+						};
+					} forEach _friendlyHelipads;
+					private _basePos = getMarkerPos _bestMarker;
+					if (_basePos isEqualTo [0,0,0]) then { _basePos = getMarkerPos "respawn_west"; };
+					_vehicleSpawnPos = _basePos vectorAdd [random 30 - 15, random 30 - 15, 200];
+				};
+				if (_isPlaneCrew) then {
+					// Nearest friendly airfield, spawned airborne
+					private _bestMarker = if (count _friendlyAirfields > 0) then { _friendlyAirfields select 0 } else { "" };
+					private _bestDist = 1e9;
+					{
+						private _mPos = getMarkerPos _x;
+						if (_mPos isNotEqualTo [0,0,0]) then {
+							private _d = _mPos distance2D _targetPos;
+							if (_d < _bestDist) then { _bestDist = _d; _bestMarker = _x; };
+						};
+					} forEach _friendlyAirfields;
+					private _basePos = if (_bestMarker != "") then { getMarkerPos _bestMarker } else { _spawnPos };
+					if (_basePos isEqualTo [0,0,0]) then { _basePos = _spawnPos; };
+					_vehicleSpawnPos = _basePos vectorAdd [random 30 - 15, random 30 - 15, 250];
 				};
 			};
 
+			// --- Spawn the vehicle ---
+			try {
+				if (_vehType != "" && { isClass (configFile >> "CfgVehicles" >> _vehType) }) then {
+					diag_log format ["[A3A Planning] GarageCrew: spawning vehicle %1 at %2...", _vehType, _vehicleSpawnPos];
+					if (_isAirCrew) then {
+						_vehicle = createVehicle [_vehType, _vehicleSpawnPos, [], 0, "FLY"];
+						private _dir = _vehicleSpawnPos getDir _targetPos;
+						_vehicle setDir _dir;
+						private _speed = if (_isPlaneCrew) then { 120 } else { 45 };
+						_vehicle setVelocity [sin(_dir) * _speed, cos(_dir) * _speed, 0];
+						private _flyHeight = if (_isPlaneCrew) then { 250 } else { 200 };
+						_vehicle flyInHeight _flyHeight;
+					} else {
+						_vehicle = createVehicle [_vehType, _vehicleSpawnPos, [], 10, "NONE"];
+					};
+					if (!isNull _vehicle) then {
+						[_vehicle, teamPlayer] call A3A_fnc_AIVEHinit;
+					} else {
+						diag_log format ["[A3A Planning Error] GarageCrew: failed to create vehicle %1.", _vehType];
+					};
+				};
+			} catch {
+				diag_log format ["[A3A Planning Exception] GarageCrew vehicle creation failed: %1", _exception];
+			};
+
+			// --- Create friendly rebel crew for vehicle (filling all combat seats) ---
+			try {
+				if (!isNull _vehicle) then {
+					_group = createGroup teamPlayer;
+
+					// Resolve friendly rebel crew class
+					private _crewUnitType = missionNamespace getVariable ["staticCrewReb", ""];
+					if (_crewUnitType == "" || { !isClass (configFile >> "CfgVehicles" >> _crewUnitType) }) then {
+						if (!isNil "A3A_faction_reb" && { A3A_faction_reb isEqualType createHashMap }) then {
+							_crewUnitType = if (_isAirCrew) then {
+								A3A_faction_reb getOrDefault ["unitPilot", A3A_faction_reb getOrDefault ["unitCrew", ""]]
+							} else {
+								A3A_faction_reb getOrDefault ["unitCrew", ""]
+							};
+						};
+					};
+					if (_crewUnitType == "" || { !isClass (configFile >> "CfgVehicles" >> _crewUnitType) }) then {
+						_crewUnitType = missionNamespace getVariable ["SDKMil", "I_G_Soldier_F"];
+					};
+					if (_crewUnitType == "" || { !isClass (configFile >> "CfgVehicles" >> _crewUnitType) }) then {
+						_crewUnitType = "I_G_Soldier_F";
+					};
+
+					// Identify all empty non-cargo combat seats (driver, gunner, commander, turret)
+					private _allSeats = fullCrew [_vehicle, "", true];
+					private _crewSeats = _allSeats select {
+						(_x select 0 isEqualTo objNull) && {
+							(_x select 1) in ["driver", "gunner", "commander", "turret"]
+						} && {
+							!(_x select 4) // ignore personTurret (cargo FFV seats)
+						}
+					};
+
+					// Fallback if fullCrew finds no empty combat seats but vehicle is uncrewed
+					if (count _crewSeats == 0 && { count (crew _vehicle) == 0 }) then {
+						_crewSeats = [[objNull, "driver", -1, [], false]];
+					};
+
+					{
+						_x params ["_seatUnit", "_role", "_cargoIndex", "_turretPath", "_personTurret"];
+						private _unit = objNull;
+						if (!isNil "A3A_fnc_createUnit") then {
+							_unit = [_group, _crewUnitType, _vehicleSpawnPos, [], 5] call A3A_fnc_createUnit;
+						} else {
+							_unit = _group createUnit [_crewUnitType, _vehicleSpawnPos, [], 5, "NONE"];
+						};
+						if (!isNull _unit) then {
+							_unit setVariable ["unitType", _crewUnitType, true];
+							// Assign seat IMMEDIATELY so unit is in vehicle before any init script runs
+							switch (_role) do {
+								case "driver": { _unit moveInDriver _vehicle; };
+								case "gunner": { _unit moveInGunner _vehicle; };
+								case "commander": { _unit moveInCommander _vehicle; };
+								case "turret": { _unit moveInTurret [_vehicle, _turretPath]; };
+								default { _unit moveInAny _vehicle; };
+							};
+							try {
+								if (!isNil "A3A_fnc_FIAinit") then {
+									[_unit, false, _crewUnitType] call A3A_fnc_FIAinit;
+								};
+							} catch {
+								diag_log format ["[A3A Planning Exception] FIAinit failed for crew unit %1: %2", _unit, _exception];
+							};
+						};
+					} forEach _crewSeats;
+
+					private _crewMembers = crew _vehicle;
+					_group setGroupIdGlobal [_idFormat + "1"];
+					diag_log format ["[A3A Planning] GarageCrew %1: vehicle %2 crewed by %3 friendly units (%4).", _idFormat, typeOf _vehicle, count _crewMembers, _crewUnitType];
+				} else {
+					_group = createGroup teamPlayer; // Empty group as placeholder so Stage 2 can proceed
+					diag_log format ["[A3A Planning Error] GarageCrew %1: no vehicle — creating empty group as placeholder.", _idFormat];
+				};
+			} catch {
+				diag_log format ["[A3A Planning Exception] GarageCrew crew creation failed: %1", _exception];
+				if (isNull _group) then { _group = createGroup teamPlayer; };
+			};
+
+			// Store air-asset flags on the group for Stage 2/4 access
+			_group setVariable ["siege_isAirCrew", _isAirCrew, true];
+			_group setVariable ["siege_isHeli", _isHeliCrew, true];
+			_group setVariable ["siege_isPlane", _isPlaneCrew, true];
+		} else {
+			// --- All non-GarageCrew squad types: normal infantry spawn ---
 			diag_log format ["[A3A Planning] Spawning squad group %1 units: %2...", _idFormat, _unitTypes];
 			_group = [_spawnPos, teamPlayer, _unitTypes, true] call A3A_fnc_spawnGroup;
 			if (isNull _group) then {
@@ -311,9 +469,21 @@ if (_mode == "DEPLOY") then {
 							diag_log format ["[A3A Planning Warning] Manual fallback: unit identifier '%1' isn't a raw createUnit-compatible classname. Falling back to 'I_G_Soldier_F'.", _spawnUnitType];
 							_spawnUnitType = "I_G_Soldier_F";
 						};
-						private _unit = _group createUnit [_spawnUnitType, _spawnPos, [], 10, "NONE"];
+						private _unit = objNull;
+						if (!isNil "A3A_fnc_createUnit") then {
+							_unit = [_group, _spawnUnitType, _spawnPos, [], 10] call A3A_fnc_createUnit;
+						} else {
+							_unit = _group createUnit [_spawnUnitType, _spawnPos, [], 10, "NONE"];
+						};
 						if (!isNull _unit) then {
-							[_unit] call A3A_fnc_FIAinit;
+							_unit setVariable ["unitType", _spawnUnitType, true];
+							try {
+								if (!isNil "A3A_fnc_FIAinit") then {
+									[_unit, false, _spawnUnitType] call A3A_fnc_FIAinit;
+								};
+							} catch {
+								diag_log format ["[A3A Planning Exception] FIAinit failed for unit %1: %2", _unit, _exception];
+							};
 						} else {
 							diag_log format ["[A3A Planning Error] Manual createUnit failed for unit class %1.", _spawnUnitType];
 						};
@@ -323,75 +493,75 @@ if (_mode == "DEPLOY") then {
 
 			if (!isNull _group) then {
 				private _timeout = time + 10;
-				waitUntil {
-					sleep 0.1;
-					({
-						alive _x
-					} count (units _group) == count _unitTypes) || {
-						time > _timeout
-					}
+				while { ({ alive _x } count (units _group) < count _unitTypes) && { time < _timeout } } do {
+					sleep 0.2;
 				};
 				_group setGroupIdGlobal [_idFormat];
 				{
-					[_x] call A3A_fnc_FIAinit
+					try {
+						if (!isNil "A3A_fnc_FIAinit") then {
+							[_x, false, typeOf _x] call A3A_fnc_FIAinit;
+						};
+					} catch {};
 				} forEach (units _group);
 			};
-		} catch {
-			diag_log format ["[A3A Planning Exception] Group/vehicle creation failed for squad: %1. Error: %2", _idFormat, _exception];
 		};
 
-		if (isNull _group || {
-			count (units _group) == 0
-		}) exitWith {
-			diag_log "[A3A Planning Error] Both spawnGroup and manual fallback failed to produce any active group.";
+		if (isNull _group) exitWith {
+			diag_log "[A3A Planning Error] Group creation failed entirely.";
 			grpNull
 		};
 
+
 		        // --- STAGE 2: Classify and lock in waypoint/behavior FIRST, before any risky
-		        // crew-assignment code runs. This is the only place a support role is decided, 
-		        // and it happens unconditionally as soon as the group exists - a later failure
-		        // in crew assignment (Stage 3) can no longer suppress it or leave the group
-		        // defaulting to assault behavior. ---
-		private _roleTag = switch (_special) do {
-			case "MG";
-			case "MG_FALLBACK": {
-				"MG"
-			};
-			case "Mortar";
-			case "Mortar_FALLBACK": {
-				"MORTAR"
-			};
-			case "VehicleSquad";
-			case "BuildAA": {
-				"VEHICLE"
-			};
-			case "GarageCrew": {
-				"CREW"
-			};
-			default {
-				"ASSAULT"
-			};
+		        // crew-assignment code runs. This is the only place a support role is decided,
+		        // and it happens unconditionally as soon as the group exists.
+		private _isAirCrewGroup = (_special == "GarageCrew") && { _group getVariable ["siege_isAirCrew", false] };
+		private _roleTag = switch (true) do {
+			case (_isAirCrewGroup): { "AIR_CREW" };
+			case (_special in ["MG", "MG_FALLBACK"]): { "MG" };
+			case (_special in ["Mortar", "Mortar_FALLBACK"]): { "MORTAR" };
+			case (_special in ["VehicleSquad", "BuildAA"] || { _special == "GarageCrew" && !_isAirCrewGroup }): { "VEHICLE" };
+			default { "ASSAULT" };
 		};
 		_group setVariable ["siege_role", _roleTag, true];
 		_group setVariable ["siege_spawnPos", _spawnPos, true];
 
-		private _isSupportElement = _special in ["MG", "Mortar", "MG_FALLBACK", "Mortar_FALLBACK", "VehicleSquad"];
+		// Only static MG/Mortar teams hold at spawn; ground vehicles and assault infantry advance towards target
+		private _isStaticSupport = _special in ["MG", "Mortar", "MG_FALLBACK", "Mortar_FALLBACK"];
 
-		if (_isSupportElement) then {
-			private _wp = _group addWaypoint [_spawnPos, 0];
-			_wp setWaypointType "HOLD";
-			_group setBehaviour "AWARE";
-			_group setCombatMode "YELLOW";
-			_group setSpeedMode "NORMAL";
-		} else {
+		if (_roleTag == "AIR_CREW") then {
+			// Air assets go to combat immediately — airOverwatch will manage orbit/recovery
 			private _wp = _group addWaypoint [_targetPos, 0];
 			_wp setWaypointType "SAD";
-			_wp setWaypointBehaviour "AWARE";
+			_wp setWaypointBehaviour "COMBAT";
 			_wp setWaypointCombatMode "RED";
 			_wp setWaypointSpeed "FULL";
-			_group setBehaviour "AWARE";
+			_group setBehaviour "COMBAT";
 			_group setCombatMode "RED";
 			_group setSpeedMode "FULL";
+			if (!isNull _vehicle) then {
+				private _flyHeight = if (_group getVariable ["siege_isPlane", false]) then { 200 } else { 80 };
+				_vehicle flyInHeight _flyHeight;
+			};
+		} else {
+			if (_isStaticSupport) then {
+				private _wp = _group addWaypoint [_spawnPos, 0];
+				_wp setWaypointType "HOLD";
+				_group setBehaviour "AWARE";
+				_group setCombatMode "YELLOW";
+				_group setSpeedMode "NORMAL";
+			} else {
+				// All combat ground vehicles (GarageCrew, VehicleSquad, BuildAA) & infantry advance with SAD waypoints
+				private _wp = _group addWaypoint [_targetPos, 0];
+				_wp setWaypointType "SAD";
+				_wp setWaypointBehaviour "COMBAT";
+				_wp setWaypointCombatMode "RED";
+				_wp setWaypointSpeed "FULL";
+				_group setBehaviour "COMBAT";
+				_group setCombatMode "RED";
+				_group setSpeedMode "FULL";
+			};
 		};
 
 		        // --- STAGE 3: crew assignment / vehicle mounting. Isolated in its own
@@ -510,8 +680,18 @@ if (_mode == "DEPLOY") then {
 
 			switch _special do {
 				case "GarageCrew": {
-					call _initVeh;
-					_vehicle allowCrewInImmobile true;
+					// Vehicle was spawned and crewed via createVehicleCrew before Stage 2.
+					// Stage 3 just finalises ownership and starts the engine.
+					if (!isNull _vehicle) then {
+						_vehicle setVariable ["owner", _group, true];
+						_vehicle allowCrewInImmobile true;
+						private _d = driver _vehicle;
+						if (!isNull _d) then { _d action ["engineOn", _vehicle]; };
+						_vehicle engineOn true;
+						diag_log format ["[A3A Planning] GarageCrew %1: vehicle %2 ready (%3 crew in vehicle).", _idFormat, typeOf _vehicle, count (crew _vehicle)];
+					} else {
+						diag_log format ["[A3A Planning Error] GarageCrew %1: vehicle is null at Stage 3.", _idFormat];
+					};
 				};
 
 				case "BuildAA": {
@@ -544,25 +724,31 @@ if (_mode == "DEPLOY") then {
 			diag_log format ["[A3A Planning Exception] Crew assignment failed for squad: %1 (role: %2). Error: %3. Waypoint/behavior already committed in Stage 2, so this squad will still hold/support correctly - it may just be missing its vehicle seat.", _idFormat, _roleTag, _exception];
 		};
 
-		        // --- STAGE 4: Dispatch the support-AI thread, with verified retry. ---
+		// --- STAGE 4: Dispatch the appropriate support-AI thread for this squad. ---
+		// MG/Mortar: supportAI thread.
+		// Air assets (AIR_CREW): airOverwatch thread (CAS attack runs, orbit, recovery).
+		// ALL ground combat vehicles (VehicleSquad, GarageCrew, BuildAA): vehicleOverwatch thread.
 		if (_special in ["MG", "Mortar", "MG_FALLBACK", "Mortar_FALLBACK"]) then {
 			[
-				{
-					[_group, _special, A3A_planning_objective, _targetPos] spawn A3A_fnc_planning_supportAI
-				},
+				{ [_group, _special, A3A_planning_objective, _targetPos] spawn A3A_fnc_planning_supportAI },
 				_idFormat
 			] call _fnc_ensureThreadStarted;
 		} else {
-			if (_special == "VehicleSquad") then {
+			if (_roleTag == "AIR_CREW") then {
 				if (!isNull _vehicle) then {
 					[
-						{
-							[_group, _vehicle, A3A_planning_objective, _targetPos] spawn A3A_fnc_planning_vehicleOverwatch
-						},
+						{ [_group, _vehicle, A3A_planning_objective, _targetPos] spawn A3A_fnc_planning_airOverwatch },
 						_idFormat
 					] call _fnc_ensureThreadStarted;
 				} else {
-					diag_log format ["[A3A Planning Error] VehicleSquad %1 has no valid vehicle - holding crew defensively on its HOLD waypoint instead of assaulting.", _idFormat];
+					diag_log format ["[A3A Planning Error] Air asset %1 has no valid vehicle object.", _idFormat];
+				};
+			} else {
+				if (!isNull _vehicle) then {
+					[
+						{ [_group, _vehicle, A3A_planning_objective, _targetPos] spawn A3A_fnc_planning_vehicleOverwatch },
+						_idFormat
+					] call _fnc_ensureThreadStarted;
 				};
 			};
 		};
@@ -625,7 +811,9 @@ if (_mode == "DEPLOY") then {
 
 				private _travelMarker = "";
 				if (_travelTime > 0) then {
-					_travelMarker = createMarker [format ["A3A_planning_travel_%1", _idFormat], _hqPos];
+					private _tMarkerName = format ["A3A_planning_travel_%1_%2", _idFormat, round (random 99999)];
+					if (getMarkerPos _tMarkerName isNotEqualTo [0,0,0]) then { deleteMarker _tMarkerName; };
+					_travelMarker = createMarker [_tMarkerName, _hqPos];
 					_travelMarker setMarkerType "mil_arrow";
 					_travelMarker setMarkerColor "ColorGUER";
 					_travelMarker setMarkerText format ["%1 (En Route)", _displayName];
@@ -676,7 +864,9 @@ if (_mode == "DEPLOY") then {
 					// Track the active group on the map in real-time
 					[_group, _idFormat] spawn {
 						params ["_group", "_idFormat"];
-						private _trackMarker = createMarker [format ["A3A_planning_track_%1", _idFormat], getPosATL (leader _group)];
+						private _trkMarkerName = format ["A3A_planning_track_%1_%2", _idFormat, round (random 99999)];
+						if (getMarkerPos _trkMarkerName isNotEqualTo [0,0,0]) then { deleteMarker _trkMarkerName; };
+						private _trackMarker = createMarker [_trkMarkerName, getPosATL (leader _group)];
 						_trackMarker setMarkerType "mil_dot";
 						_trackMarker setMarkerColor "ColorGUER";
 						_trackMarker setMarkerText _idFormat;
