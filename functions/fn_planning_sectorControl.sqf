@@ -34,7 +34,7 @@ private _fnc_postCapture = {
 		{
 			private _group = _x;
 			if (!isNull _group && {
-				count (units _group) > 0
+				{ alive _x } count (units _group) > 0
 			}) then {
 				// AIR_CREW groups manage their own recovery via fn_planning_airOverwatch.
 				// Skip them here to avoid double-processing.
@@ -67,12 +67,15 @@ private _fnc_postCapture = {
 							};
 						} forEach _aliveUnits;
 
-						                    // --- Garrison mode ---
+						// --- Garrison mode ---
 						if (_captureAction == 1) then {
+							private _perUnitMoney = if (_originalCount > 0) then { _costMoney / _originalCount } else { 100 };
+							private _perUnitHR = if (_originalCount > 0) then { _costHR / _originalCount } else { 1 };
+
 							{
 								if (alive _x) then {
 									private _uType = _x getVariable ["unitType", typeOf _x];
-									_garrisonList pushBack _uType;
+									_garrisonList pushBack [_uType, _perUnitMoney, _perUnitHR];
 									_totalGarrisonedCount = _totalGarrisonedCount + 1;
 								};
 							} forEach _aliveUnits;
@@ -82,14 +85,14 @@ private _fnc_postCapture = {
 							} forEach _groupVehicles;
 						};
 
-						                    // --- Refund mode ---
+						// --- Refund mode ---
 						if (_captureAction == 2) then {
 							private _ratio = _aliveCount / _originalCount;
 							_totalRefundMoney = _totalRefundMoney + round (_costMoney * _ratio);
 							_totalRefundHR = _totalRefundHR + round (_costHR * _ratio);
 						};
 
-						                    // Clean up world objects (classnames already captured above)
+						// Clean up world objects (classnames already captured above)
 						{
 							deleteVehicle _x;
 						} forEach _groupVehicles;
@@ -102,42 +105,84 @@ private _fnc_postCapture = {
 			};
 		} forEach A3A_planning_activeGroups;
 
-		        // --- vehicle recovery ---
+		// --- vehicle recovery ---
 		if (count _allRecoveredVehicles > 0) then {
 			diag_log format ["[A3A Planning] Recovering %1 siege vehicles to HQ Garage: %2", count _allRecoveredVehicles, _allRecoveredVehicles];
 			[_allRecoveredVehicles] call A3A_fnc_planning_serverAddGarage;
 		};
 
-		        // --- apply garrison ---
-		        // We call A3A_fnc_garrisonUpdate once per unit type on the server (machine 2).
-		        // This is the same pathway used by Antistasi's own garrison recruiter (fn_garrisonAdd.sqf)
-		        // and correctly handles:
-		        //   • Writing to the new-style structured garrison variables (%1_garrison, %1_requested)
-		        //   • Immediately spawning the unit if the location is currently loaded (spawner == 2)
-		        //   • Deferring to natural spawn if the location is currently unloaded
-		if (_captureAction == 1 && {
-			_totalGarrisonedCount > 0
-		}) then {
-			diag_log format ["[A3A Planning] Garrisoning %1 surviving siege troops at '%2' via A3A_fnc_garrisonUpdate.", _totalGarrisonedCount, _marker];
-			[_garrisonList, teamPlayer, _marker, 2] remoteExec ["A3A_fnc_garrisonUpdate", 2];
+		// --- apply garrison (with Antistasi capacity capping & overflow refund) ---
+		if (_captureAction == 1 && { _totalGarrisonedCount > 0 }) then {
+			private _maxCapacity = if (!isNil "A3A_fnc_garrisonLimit") then {
+				[_marker] call A3A_fnc_garrisonLimit
+			} else {
+				private _airports = missionNamespace getVariable ["airportsX", []];
+				private _milbases = missionNamespace getVariable ["milbases", []];
+				private _outposts = missionNamespace getVariable ["outposts", []];
+				switch (true) do {
+					case (_marker in _airports): { 40 };
+					case (_marker in _milbases): { 30 };
+					case (_marker in _outposts): { 20 };
+					default { 20 };
+				}
+			};
 
-			// If the zone is currently loaded, spawn each garrison unit individually using
-			// A3A_fnc_createSDKGarrisonsTemp — the same function fn_garrisonAdd.sqf uses when
-			// a player manually garrisons a unit into an already-loaded location.
-			// This spawns only infantry/crew without touching the flag, statics, crates, or
-			// any other world objects placed at the captured base.
-			if ((spawner getVariable [_marker, 2]) != 2) then {
-				diag_log format ["[A3A Planning] Zone '%1' is currently loaded (spawner=%2). Spawning %3 garrison units via createSDKGarrisonsTemp.", _marker, spawner getVariable _marker, count _garrisonList];
-				[_marker, _garrisonList] spawn {
-					params ["_marker", "_garrisonList"];
-					{
-						[_marker, _x] remoteExec ["A3A_fnc_createSDKGarrisonsTemp", 2];
-						sleep 0.5;
-					} forEach _garrisonList;
+			private _existingGarrison = if (!isNil "garrison") then { garrison getVariable [_marker, []] } else { [] };
+			private _currentCount = count _existingGarrison;
+			private _availableSlots = (_maxCapacity - _currentCount) max 0;
+
+			private _unitsToGarrison = [];
+			private _unitsOverflow = [];
+
+			if (count _garrisonList <= _availableSlots) then {
+				_unitsToGarrison = _garrisonList;
+			} else {
+				_unitsToGarrison = _garrisonList select [0, _availableSlots];
+				_unitsOverflow = _garrisonList select [_availableSlots, (count _garrisonList) - _availableSlots];
+			};
+
+			if (count _unitsToGarrison > 0) then {
+				private _classnamesToGarrison = _unitsToGarrison apply { _x select 0 };
+				diag_log format ["[A3A Planning] Garrisoning %1 surviving siege troops at '%2' (Cap: %3, Existing: %4, Available: %5).", count _classnamesToGarrison, _marker, _maxCapacity, _currentCount, _availableSlots];
+				[_classnamesToGarrison, teamPlayer, _marker, 2] remoteExec ["A3A_fnc_garrisonUpdate", 2];
+
+				// If the zone is currently loaded by a player (spawner != 2), physically spawn the garrison units in the world immediately
+				private _spawnerState = if (!isNil "spawner") then { spawner getVariable [_marker, 2] } else { 2 };
+				if (_spawnerState != 2) then {
+					diag_log format ["[A3A Planning] Zone '%1' is currently loaded (spawner=%2). Spawning %3 garrison units via createSDKGarrisonsTemp.", _marker, _spawnerState, count _classnamesToGarrison];
+					[_marker, _classnamesToGarrison] spawn {
+						params ["_marker", "_units"];
+						{
+							if (!isNil "A3A_fnc_createSDKGarrisonsTemp") then {
+								[_marker, _x] remoteExec ["A3A_fnc_createSDKGarrisonsTemp", 2];
+							};
+							sleep 0.3;
+						} forEach _units;
+					};
 				};
 			};
 
-			private _msg = format ["Garrisoned %1 surviving siege troops at %2.", _totalGarrisonedCount, markerText ("Dum" + _marker)];
+			if (count _unitsOverflow > 0) then {
+				private _overflowMoney = 0;
+				private _overflowHR = 0;
+				{
+					_overflowMoney = _overflowMoney + (_x select 1);
+					_overflowHR = _overflowHR + (_x select 2);
+				} forEach _unitsOverflow;
+
+				_overflowMoney = round _overflowMoney;
+				_overflowHR = round _overflowHR;
+
+				if (_overflowMoney > 0 || _overflowHR > 0) then {
+					[_overflowHR, _overflowMoney] remoteExec ["A3A_fnc_resourcesFIA", 2];
+					diag_log format ["[A3A Planning] Refunded %1 overflow siege troops (%2 HR, %3 €) exceeding garrison capacity at %4.", count _unitsOverflow, _overflowHR, _overflowMoney, _marker];
+				};
+			};
+
+			private _msg = format ["Garrisoned %1 surviving siege troops at %2 (Capacity: %3/%4).", count _unitsToGarrison, markerText ("Dum" + _marker), (count _unitsToGarrison + _currentCount) min _maxCapacity, _maxCapacity];
+			if (count _unitsOverflow > 0) then {
+				_msg = _msg + format [" Refunded %1 overflow troops.", count _unitsOverflow];
+			};
 			if (count _allRecoveredVehicles > 0) then {
 				_msg = _msg + format [" Recovered %1 vehicles to HQ Garage.", count _allRecoveredVehicles];
 			};
@@ -148,7 +193,7 @@ private _fnc_postCapture = {
 			] remoteExec ["A3A_fnc_customHint", 0];
 		};
 
-		        // --- apply refund ---
+		// --- apply refund ---
 		if (_captureAction == 2 && {
 			(_totalRefundMoney > 0 || {
 				_totalRefundHR > 0
@@ -165,7 +210,7 @@ private _fnc_postCapture = {
 		publicVariable "A3A_planning_activeGroups";
 	};
 
-	    // Reset siege state unconditionally (even if no groups survived or action == 0)
+	// Reset siege state unconditionally (even if no groups survived or action == 0)
 	A3A_planning_objective = "";
 	A3A_planning_assaultStarted = false;
 	A3A_planning_captureTriggered = false;
@@ -195,14 +240,24 @@ while { true } do {
 		} else {
 			// --- SCENARIO B: Assault in progress (enemies still own the position) ---
 
-			            // count remaining enemy defenders within the AO (150m)
+			// count remaining enemy defenders within the AO (radius scaled by location type)
+			private _airports = missionNamespace getVariable ["airportsX", []];
+			private _milbases = missionNamespace getVariable ["milbases", []];
+			private _outposts = missionNamespace getVariable ["outposts", []];
+			private _scanRadius = switch (true) do {
+				case (_marker in _airports): { 450 };
+				case (_marker in _milbases): { 350 };
+				case (_marker in _outposts): { 250 };
+				default { 200 };
+			};
+
 			private _totalEnemies = {
 				alive _x && {
 					side _x == Occupants || {
 						side _x == Invaders
 					}
 				} && {
-					_x distance2D _targetPos < 150
+					_x distance2D _targetPos < _scanRadius
 				}
 			} count allUnits;
 

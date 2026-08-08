@@ -2,7 +2,10 @@
 
 disableSerialization;
 
+private _remoteMode = missionNamespace getVariable ["A3A_tweak_remoteHQMenu", 2]; // 0 = Disabled (At HQ only), 1 = Environment Only, 2 = Full Menu Anywhere
+
 private _fnc_checkIfAppropriateLocation = {
+	if (_remoteMode == 2) exitWith { true };
 	if (theBoss distance2D (getMarkerPos "Synd_HQ") < 50) exitWith {
 		true
 	};
@@ -39,19 +42,32 @@ if (call _fnc_checkIfAppropriateLocation) then {
 		menuSliderArray = _firstPart + [[format [(localize "STR_antistasi_rivals_tab_header"), (toUpper (A3A_faction_riv get "name"))], 7000]] + _secondPart;
 	};
 } else {
-	menuSliderArray = [
-		[localize "STR_commander_menu_abilities_header_upper", 1140],
-		["ATTACK PLANNING", 8000],
-		[localize "STR_commander_menu_garrison_header_upper", 2000],
-		[localize "STR_commander_menu_game_options_header_upper", 5000]
-	];
+	if (_remoteMode == 1) then {
+		// Environment tab (Weather & Time) accessible anywhere
+		menuSliderArray = [
+			[localize "STR_commander_menu_abilities_header_upper", 1140],
+			["ATTACK PLANNING", 8000],
+			[localize "STR_commander_menu_garrison_header_upper", 2000],
+			[localize "STR_commander_menu_environment_header_upper", 4000],
+			[localize "STR_commander_menu_game_options_header_upper", 5000],
+			[localize "STR_commander_menu_game_info_header_upper", 6000]
+		];
+	} else {
+		menuSliderArray = [
+			[localize "STR_commander_menu_abilities_header_upper", 1140],
+			["ATTACK PLANNING", 8000],
+			[localize "STR_commander_menu_garrison_header_upper", 2000],
+			[localize "STR_commander_menu_game_options_header_upper", 5000],
+			[localize "STR_commander_menu_game_info_header_upper", 6000]
+		];
 
-	[
-		localize "STR_notifiers_info_type",
-		localize "STR_commander_menu_options_header",
-		parseText (localize "STR_commander_menu_options_some_tabs"),
-		10
-	] spawn SCRT_fnc_ui_showMessage;
+		[
+			localize "STR_notifiers_info_type",
+			localize "STR_commander_menu_options_header",
+			parseText (localize "STR_commander_menu_options_some_tabs"),
+			10
+		] spawn SCRT_fnc_ui_showMessage;
+	};
 };
 
 menuSliderCurrent = 0;
@@ -244,7 +260,7 @@ if (isServer || {
 	(_display displayCtrl 5200) ctrlSetTooltip (localize "STR_generic_admin_only");
 };
 
-if (player distance2D (getMarkerPos "Synd_HQ") > 50) then {
+if (_remoteMode == 0 && { player distance2D (getMarkerPos "Synd_HQ") > 50 }) then {
 	(_display displayCtrl 5300) ctrlShow false;
 };
 

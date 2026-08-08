@@ -10,7 +10,7 @@ class CfgPatches {
         weapons[] = {};
         requiredVersion = 1.0;
         requiredAddons[] = {"A3A_core"};
-        author = "Antigravity";
+        author = "Gemini and CL";
     };
 };
 
@@ -41,7 +41,7 @@ class A3A {
             title = "Instant Construction";
             tooltip = "Instantly builds objects placed from construction crates without needing manual engineer tool assembly.";
             values[] = {0, 1};
-            texts[] = {"Disabled (Manual)", "Enabled (Instant)"};
+            texts[] = {"Disabled", "Enabled"};
             default = 1;
         };
         /*
@@ -57,7 +57,7 @@ class A3A {
             title = "Chain Build Radius";
             tooltip = "When you manually finish building one object, other unbuilt objects within this radius are also completed automatically. 0 = Disabled. Only applies with manual construction.";
             values[] = {0, 5, 10, 15, 20, 30, 50};
-            texts[] = {"Disabled (0m)", "5 Meters", "10 Meters", "15 Meters", "20 Meters", "30 Meters", "50 Meters"};
+            texts[] = {"Disabled", "5 Meters", "10 Meters", "15 Meters", "20 Meters", "30 Meters", "50 Meters"};
             default = 0;
         };
         // =====================================================
@@ -81,14 +81,14 @@ class A3A {
             title = "Cooldown (Seconds)";
             tooltip = "Cooldown in seconds between consecutive self-revives.";
             values[] = {0, 30, 60, 120, 300, 600};
-            texts[] = {"0s (No Cooldown)", "30s", "60s (1 min)", "120s (2 min)", "300s (5 min)", "600s (10 min)"};
+            texts[] = {"0s", "30s", "60s", "120s", "300s", "600s"};
             default = 300;
         };
         class A3A_selfReviveTweak_Damage : ExtenderParams {
             title = "Damage After Revive";
             tooltip = "The amount of damage the player has immediately after self-reviving.";
             values[] = {0, 25, 50, 75};
-            texts[] = {"0% (Full Health)", "25% Wounded", "50% Wounded (Default)", "75% Wounded"};
+            texts[] = {"0%", "25%", "50%", "75%"};
             default = 50;
         };
 
@@ -131,7 +131,7 @@ class A3A {
             title = "Speed Multiplier";
             tooltip = "Multiplier applied to fast travel time. 'Instant' skips the black-screen wait entirely.";
             values[] = {1, 2, 5, 10, 9999};
-            texts[] = {"1x (Default)", "2x Faster", "5x Faster", "10x Faster", "Instant (No Wait)"};
+            texts[] = {"1x", "2x Faster", "5x Faster", "10x Faster", "Instant"};
             default = 1;
         };
 
@@ -149,14 +149,14 @@ class A3A {
             title = "HQ: Vehicle/Static Save Radius";
             tooltip = "The distance around the rebel HQ where vehicles and static weapons are saved.";
             values[] = {25, 50, 75, 100, 150, 200};
-            texts[] = {"25m", "50m (Default)", "75m", "100m", "150m", "200m"};
+            texts[] = {"25m", "50m", "75m", "100m", "150m", "200m"};
             default = 50;
         };
         class A3A_tweak_saveRadiusBuffer : ExtenderParams {
             title = "Bases: Save Radius Buffer";
             tooltip = "Extra distance (in meters) added to the border area of friendly outposts/airbases for saving vehicles and statics.";
             values[] = {0, 25, 50, 75, 100, 150, 200};
-            texts[] = {"0m (Strict Boundary)", "25m", "50m", "75m", "100m", "150m", "200m"};
+            texts[] = {"0m", "25m", "50m", "75m", "100m", "150m", "200m"};
             default = 0;
         };
 
@@ -179,9 +179,9 @@ class A3A {
         };
         class A3A_tweak_discoveryDistance : ExtenderParams {
             title = "Reveal Distance";
-            tooltip = "Max distance (in meters) from the outpost center/flag to trigger discovery.";
+            tooltip = "Max distance from the outpost center/flag to trigger discovery.";
             values[] = {50, 100, 150, 200, 300, 500};
-            texts[] = {"50m", "100m", "150m", "200m (Default)", "300m", "500m"};
+            texts[] = {"50m", "100m", "150m", "200m", "300m", "500m"};
             default = 200;
         };
 
@@ -254,6 +254,31 @@ class A3A {
             values[] = {19, 0, 20, 21, 22, 57};
             texts[] = {"R (Default)", "Double-press R (Confirmation)", "T", "Y", "U", "Space"};
             default = 19;
+        };
+
+        // =====================================================
+        // CL ANTISTASI TWEAKS - MISC & PERFORMANCE
+        // =====================================================
+        class CL_Tweaks_Misc_Spacer : ExtenderParams {
+            title = "--- CL Tweaks: Misc & Performance ---";
+            tooltip = "Miscellaneous commander menu and spawn distance tweaks.";
+            values[] = {0};
+            texts[] = {""};
+            default = 0;
+        };
+        class A3A_tweak_remoteHQMenu : ExtenderParams {
+            title = "Remote Commander Menu Access";
+            tooltip = "Allows accessing the HQ Commander menu features (weather, time, HQ management) from anywhere on the map.";
+            values[] = {0, 1, 2};
+            texts[] = {"Disabled (At HQ / Trader only)", "Environment Only (Weather & Time anywhere)", "Full Menu Anywhere (Default)"};
+            default = 2;
+        };
+        class A3A_tweak_minSpawnDistance : ExtenderParams {
+            title = "AI Spawn Distance Override";
+            tooltip = "Overrides the minimum AI simulation spawn distance (distanceSPWN). Off uses vanilla settings. Ranges from 300m (ideal for dense urban maps) up to 3000m.";
+            values[] = {0, 300, 400, 500, 600, 700, 800, 900, 1000, 1200, 1500, 1800, 2000, 2500, 3000};
+            texts[] = {"Off (Vanilla Default)", "300m", "400m", "500m", "600m", "700m", "800m", "900m", "1000m", "1200m", "1500m", "1800m", "2000m", "2500m", "3000m"};
+            default = 0;
         };
     };
 };

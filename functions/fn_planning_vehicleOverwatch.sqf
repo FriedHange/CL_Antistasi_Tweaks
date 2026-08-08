@@ -32,6 +32,12 @@ while { !_done } do {
 	if (!alive _vehicle || { { alive _x } count (units _group) == 0 }) exitWith {
 		_done = true;
 	};
+	if !(call A3A_fnc_planning_isSiegeActive) exitWith {
+		_done = true;
+	};
+	if (A3A_planning_objective != _targetMarker) exitWith {
+		_done = true;
+	};
 	if ((sidesX getVariable [_targetMarker, sideUnknown]) == teamPlayer) exitWith {
 		_done = true;
 	};

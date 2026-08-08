@@ -1,6 +1,6 @@
 /*
-    fn_controlunit.sqf
-    Override of A3A_fnc_controlunit.
+    fn_controlHCsquad.sqf
+    Override of A3A_fnc_controlHCsquad.
     Maintainer: CL Antistasi Tweaks Extender (original: Antistasi Ultimate)
 
     Changes vs vanilla:
@@ -14,9 +14,29 @@
     Environment: Any
 */
 
-params ["_units"];
+private _rawInput = if (_this isEqualTo [] || isNil "_this") then { hcSelected player } else { _this };
+private _groups = if (_rawInput isEqualType []) then { _rawInput } else { [_rawInput] };
 
-private _unit = _units select 0;
+if (_groups isEqualTo []) exitWith {
+    [localize "STR_control_unit_hint_header", localize "STR_control_unit_error_no_squad_selected"] call A3A_fnc_customHint;
+};
+
+private _first = _groups select 0;
+private _unit = objNull;
+
+if (_first isEqualType objNull) then {
+    if (_first isKindOf "CAManBase") then {
+        _unit = _first;
+    };
+} else {
+    if (_first isEqualType grpNull) then {
+        _unit = leader _first;
+    };
+};
+
+if (isNull _unit) exitWith {
+    [localize "STR_control_unit_hint_header", localize "STR_control_unit_error_no_squad_selected"] call A3A_fnc_customHint;
+};
 
 if (_unit == Petros) exitWith {
     [localize "STR_control_unit_hint_header", localize "STR_control_unit_error_petros"] call A3A_fnc_customHint;

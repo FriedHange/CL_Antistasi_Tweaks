@@ -119,12 +119,19 @@ selectPlayer _unit;
 private _configTime = missionNamespace getVariable ["A3A_tweak_aiControlTimeOverride", aiControlTime];
 private _timeX = if (_configTime == -1) then { 999999 } else { _configTime };
 
-private _returnActionId = _unit addAction [(localize "STR_antistasi_actions_return_control_to_ai"), {
-    params ["_unit"];
-    private _player = _unit getVariable "A3A_player";
-    _unit setVariable ["controlReturned", true];
-    selectPlayer _player;
-}];
+private _returnActionId = _unit addAction [
+    format ["<t color='#FFD700'>%1</t>", localize "STR_antistasi_actions_return_control_to_ai"],
+    {
+        params ["_target"];
+        _target setVariable ["controlReturned", true, true];
+        player setVariable ["controlReturned", true, true];
+        private _originalBody = _target getVariable ["A3A_player", objNull];
+        if (!isNull _originalBody) then {
+            _originalBody setVariable ["controlReturned", true, true];
+        };
+    },
+    nil, 10, true, true, "", "true"
+];
 private _healActionId = [_originalBody, "heal2"] call A3A_fnc_flagaction;
 
 private _layer = ["A3A_infoCenter"] call BIS_fnc_rscLayer;

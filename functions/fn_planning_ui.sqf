@@ -12,6 +12,15 @@ if (isNull _display) exitWith {};
 // Ensure vehicle availability cache is updated/refreshed dynamically
 [] call A3A_fnc_planning_cacheVehicles;
 
+private _activeGroupCount = if (isNil "A3A_planning_activeGroups") then { 0 } else { { !isNull _x && { { alive _x } count (units _x) > 0 } } count A3A_planning_activeGroups };
+private _activeUnitCount = if (isNil "A3A_planning_activeGroups") then { 0 } else {
+	private _cnt = 0;
+	{ if (!isNull _x) then { _cnt = _cnt + ({ alive _x } count (units _x)); }; } forEach A3A_planning_activeGroups;
+	_cnt
+};
+private _activeStagingCount = count (missionNamespace getVariable ["A3A_planning_entryPoints", []]);
+diag_log format ["[A3A Planning Diagnostics] UI opened. Target: '%1' | Active Siege Groups: %2 | Active Siege Units: %3 | Active Staging Points: %4", A3A_planning_objective, _activeGroupCount, _activeUnitCount, _activeStagingCount];
+
 if (isNil "A3A_planning_closeEHAdded") then {
 	A3A_planning_closeEHAdded = true;
 	_display displayAddEventHandler ["Unload", {
@@ -586,7 +595,7 @@ A3A_fnc_planning_openGarageBrowser = {
 	_modalGroup ctrlCommit 0;
 
 	// Keyboard event handler: ESC to cancel, ENTER to confirm selected vehicle
-	private _escEH = _display displayAddEventHandler ["KeyDown", {
+	A3A_planning_garageEscEH = _display displayAddEventHandler ["KeyDown", {
 		params ["_display", "_key"];
 		if (_key == 1) exitWith { // ESC key
 			[_display] call A3A_fnc_planning_closeGarageBrowser;

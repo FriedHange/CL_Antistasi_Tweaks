@@ -12,6 +12,10 @@ params [
 ];
 
 if (_mode in ["DEPLOY", "REINFORCE"]) then {
+	if (_mode == "DEPLOY" && { call A3A_fnc_planning_isSiegeActive }) exitWith {
+		diag_log format ["[A3A Planning Warning] DEPLOY request ignored: siege operation already active for target '%1'.", A3A_planning_objective];
+	};
+
 	_params params [
 		["_totalMoney", 0, [0]],
 		["_totalHR", 0, [0]],
@@ -41,7 +45,7 @@ if (_mode in ["DEPLOY", "REINFORCE"]) then {
 	if (isNil "A3A_planning_activeGroups") then {
 		A3A_planning_activeGroups = [];
 	} else {
-		A3A_planning_activeGroups = A3A_planning_activeGroups select { !isNull _x && { count (units _x) > 0 } };
+		A3A_planning_activeGroups = A3A_planning_activeGroups select { !isNull _x && { { alive _x } count (units _x) > 0 } };
 	};
 	publicVariable "A3A_planning_activeGroups";
 	A3A_planning_captureTriggered = false;
@@ -871,7 +875,7 @@ if (_mode in ["DEPLOY", "REINFORCE"]) then {
 						_trackMarker setMarkerColor "ColorGUER";
 						_trackMarker setMarkerText _idFormat;
 
-						while { !isNull _group && { count (units _group) > 0 } } do {
+						while { !isNull _group && { { alive _x } count (units _group) > 0 } && { call A3A_fnc_planning_isSiegeActive } } do {
 							private _ldr = leader _group;
 							if (alive _ldr) then {
 								_trackMarker setMarkerPos (getPosATL _ldr);

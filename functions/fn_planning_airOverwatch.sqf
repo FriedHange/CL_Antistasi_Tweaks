@@ -144,6 +144,9 @@ while { !_done } do {
 	if (damage _vehicle > 0.6 || !canMove _vehicle) exitWith {
 		diag_log format ["[A3A Planning] Air Overwatch: %1 (%2) critically damaged (damage: %3) - disengaging & recovering.", groupId _group, _vehClass, round (damage _vehicle * 100)];
 	};
+	if !(call A3A_fnc_planning_isSiegeActive) exitWith {
+		diag_log format ["[A3A Planning] Air Overwatch: %1 (%2) siege state ended - starting mission completion & recovery.", groupId _group, _vehClass];
+	};
 	if ((sidesX getVariable [_targetMarker, sideUnknown]) == teamPlayer) exitWith {
 		diag_log format ["[A3A Planning] Air Overwatch: %1 (%2) objective captured - starting mission completion & recovery.", groupId _group, _vehClass];
 	};

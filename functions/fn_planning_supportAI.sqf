@@ -322,9 +322,13 @@ private _cRange = 0;
 private _cLOS = 0; private _cNoTargets = 0;
 
 while { !_done } do {
-	if (!alive (leader _group) || {
-		count (units _group) == 0
-	}) exitWith {
+	if (isNull _group || { { alive _x } count (units _group) == 0 }) exitWith {
+		_done = true;
+	};
+	if !(call A3A_fnc_planning_isSiegeActive) exitWith {
+		_done = true;
+	};
+	if (A3A_planning_objective != _targetMarker) exitWith {
 		_done = true;
 	};
 	if ((sidesX getVariable [_targetMarker, sideUnknown]) == teamPlayer) exitWith {

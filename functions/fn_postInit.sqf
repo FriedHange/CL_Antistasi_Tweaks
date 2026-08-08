@@ -12,6 +12,22 @@ A3A_fnc_isWithinMarkerArea = compile preprocessFileLineNumbers "\CL_Antistasi_Tw
 // Override AI direct control functions to support configurable time limit and damage threshold
 SCRT_fnc_ai_possessFriendlyUnit = compile preprocessFileLineNumbers "\CL_Antistasi_Tweaks\functions\fn_ai_possessFriendlyUnit.sqf";
 A3A_fnc_controlunit = compile preprocessFileLineNumbers "\CL_Antistasi_Tweaks\functions\fn_controlunit.sqf";
+A3A_fnc_controlHCsquad = compile preprocessFileLineNumbers "\CL_Antistasi_Tweaks\functions\fn_controlHCsquad.sqf";
+
+// Helper function to stop controlling AI unit and return to player body immediately
+A3A_fnc_returnControl = {
+	if (!hasInterface) exitWith {};
+	player setVariable ["controlReturned", true, true];
+	private _owner = player getVariable ["owner", player];
+	if (_owner != player) then {
+		_owner setVariable ["controlReturned", true, true];
+	};
+	private _orig = player getVariable ["originalBody", objNull];
+	if (!isNull _orig) then {
+		_orig setVariable ["controlReturned", true, true];
+	};
+};
+CL_fnc_returnControl = A3A_fnc_returnControl;
 
 // Override builder placing objects function to support auto-building.
 // A3A_fnc_placeBuilderObjects is freshly compiled by CfgFunctions at every mission start, 
@@ -159,8 +175,32 @@ if (isServer) then {
 			["A3A_tweak_siegeDeploymentMultiplier", 1.25],
 			["A3A_tweak_aiControlTimeOverride", 120],
 			["A3A_tweak_aiControlDamageThreshold", 0],
-			["A3A_tweak_unconsciousRespawnKey", 19]
+			["A3A_tweak_unconsciousRespawnKey", 19],
+			["A3A_tweak_remoteHQMenu", 2],
+			["A3A_tweak_minSpawnDistance", 0]
 		];
+		private _overrideTime = missionNamespace getVariable ["A3A_tweak_aiControlTimeOverride", 120];
+		private _globalTime = if (_overrideTime == -1) then { 999999 } else { _overrideTime };
+		missionNamespace setVariable ["aiControlTime", _globalTime, true];
+
+		// AI Spawn Distance Override
+		private _minSpawnDist = missionNamespace getVariable ["A3A_tweak_minSpawnDistance", 0];
+		if (_minSpawnDist > 0) then {
+			distanceSPWN = _minSpawnDist;
+			publicVariable "distanceSPWN";
+			diag_log format ["[A3A Ultimate Tweaks Extender] Override AI Spawn Distance (distanceSPWN) set to %1m", _minSpawnDist];
+
+			// Delayed re-enforcement after Antistasi core finishes mission init
+			[] spawn {
+				sleep 5;
+				private _dist = missionNamespace getVariable ["A3A_tweak_minSpawnDistance", 0];
+				if (_dist > 0) then {
+					distanceSPWN = _dist;
+					publicVariable "distanceSPWN";
+					diag_log format ["[A3A Ultimate Tweaks Extender] Delayed enforcement: AI Spawn Distance (distanceSPWN) locked to %1m", _dist];
+				};
+			};
+		};
 	};
 
 	// Client-side loop to reveal hidden enemy zones when player gets near
