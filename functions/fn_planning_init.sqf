@@ -38,6 +38,38 @@ if (isNil "A3A_planning_initDone") then {
 		    true
 	    };
 
+	    // Global function: Calculate the active Area of Operations (AO) radius for an objective
+	    A3A_fnc_planning_getAORadius = {
+		    params [["_marker", "", [""]]];
+		    if (_marker == "") exitWith { 300 };
+		    private _markerSize = markerSize _marker;
+		    private _maxMarkerDim = selectMax _markerSize;
+		    private _airports = missionNamespace getVariable ["airportsX", []];
+		    private _milbases = missionNamespace getVariable ["milbases", []];
+		    private _outposts = missionNamespace getVariable ["outposts", []];
+		    private _cities = missionNamespace getVariable ["citiesX", []];
+		    switch (true) do {
+			    case (_marker in _airports): { _maxMarkerDim max 750 };
+			    case (_marker in _milbases): { _maxMarkerDim max 450 };
+			    case (_marker in _outposts): { _maxMarkerDim max 350 };
+			    case (_marker in _cities): { _maxMarkerDim max 400 };
+			    default { _maxMarkerDim max 300 };
+		    }
+	    };
+
+	    // Global function: Check whether a position or unit is within the target objective's AO
+	    A3A_fnc_planning_isInsideAO = {
+		    params [["_posOrUnit", [0, 0, 0], [[], objNull]], ["_marker", "", [""]]];
+		    if (_marker == "") exitWith { false };
+		    private _pos = if (_posOrUnit isEqualType objNull) then { getPosATL _posOrUnit } else { _posOrUnit };
+		    if (count _pos < 2) exitWith { false };
+		    private _targetPos = getMarkerPos _marker;
+		    private _aoRadius = [_marker] call A3A_fnc_planning_getAORadius;
+		    if ((_pos distance2D _targetPos) <= _aoRadius) exitWith { true };
+		    if (!isNil "A3A_fnc_isWithinMarkerArea" && { [_pos, _marker] call A3A_fnc_isWithinMarkerArea }) exitWith { true };
+		    false
+	    };
+
 	    // UI Helpers
 	    A3A_planning_includeVehicle = true;          // Checkbox state for including vehicles
 	    A3A_planning_selectedSquadIndex = 0;         // Selected squad type index (0-10)

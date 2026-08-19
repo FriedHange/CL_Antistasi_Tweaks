@@ -46,9 +46,25 @@ while { !_done } do {
 	if (_curTgt distance2D [0, 0, 0] < 1) then { _curTgt = _targetPos; };
 	private _curPos = getPosATL _vehicle;
 
-	// Target acquisition within 800m
+	// Target acquisition within 800m or anywhere within the objective AO
 	private _nearEnemies = allUnits select {
-		alive _x && { side _x in [Occupants, Invaders] } && { _x distance2D _curPos < 800 || { _x distance2D _curTgt < 600 } }
+		alive _x && {
+			side _x in [Occupants, Invaders]
+		} && {
+			!captive _x && {
+				lifeState _x != "INCAPACITATED" && {
+					!(_x getVariable ["incapacitated", false]) && {
+						(_x distance2D _curPos < 800) || {
+							if (!isNil "A3A_fnc_planning_isInsideAO") then {
+								[_x, _targetMarker] call A3A_fnc_planning_isInsideAO
+							} else {
+								_x distance2D _curTgt < 600
+							}
+						}
+					}
+				}
+			}
+		}
 	};
 
 	private _gunner = gunner _vehicle;
@@ -84,18 +100,21 @@ while { !_done } do {
 		};
 	};
 
-	// Calculate ideal assault support position relative to objective
+	// Calculate ideal assault support position relative to active clearing target or objective
+	private _clearingTarget = _group getVariable ["siege_clearingTarget", [0, 0, 0]];
+	private _activeTarget = if (_clearingTarget isNotEqualTo [0, 0, 0]) then { _clearingTarget } else { _curTgt };
+
 	private _spawnPos = _group getVariable ["siege_spawnPos", _curPos];
-	private _approachDir = _spawnPos vectorFromTo _curTgt;
+	private _approachDir = _spawnPos vectorFromTo _activeTarget;
 	if (_approachDir isEqualTo [0, 0, 0]) then { _approachDir = [0, 1, 0]; };
 
-	private _desiredPos = _curTgt vectorAdd ((vectorNormalized _approachDir) vectorMultiply -_standoff);
-	if (_curPos distance2D _curTgt < _standoff) then {
-		_desiredPos = _curTgt;
+	private _desiredPos = _activeTarget vectorAdd ((vectorNormalized _approachDir) vectorMultiply -_standoff);
+	if (_curPos distance2D _activeTarget < _standoff) then {
+		_desiredPos = _activeTarget;
 	};
 
 	// Periodically update movement waypoints so vehicle continuously pushes with troops
-	if ((_curPos distance2D _desiredPos > 35) && { (time - _lastWpTime > 12) || (_desiredPos distance2D _lastWpPos > 30) || (count (waypoints _group) == 0) }) then {
+	if ((_curPos distance2D _desiredPos > 35) && { (time - _lastWpTime > 10) || (_desiredPos distance2D _lastWpPos > 30) || (count (waypoints _group) == 0) }) then {
 		_lastWpTime = time;
 		_lastWpPos = _desiredPos;
 
@@ -111,6 +130,10 @@ while { !_done } do {
 		_group setBehaviour "COMBAT";
 		_group setCombatMode "RED";
 		_group setSpeedMode "FULL";
+
+		if (!isNull _driver && { alive _driver }) then {
+			[_driver, _desiredPos] remoteExec ["A3A_fnc_planning_localDoMove", owner _driver];
+		};
 	};
 
 	sleep 6;

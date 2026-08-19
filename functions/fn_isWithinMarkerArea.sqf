@@ -27,7 +27,8 @@ params [
 
 if (isNil "_position" || isNil "_markerName") exitWith { false };
 if (_position isEqualType objNull && { isNull _position }) exitWith { false };
-if (markerType _markerName isEqualTo "") exitWith { false };
+if (_markerName isEqualTo "") exitWith { false };
+if (markerShape _markerName isEqualTo "") exitWith { false };
 
 // Get custom parameters
 private _customHQRadius = missionNamespace getVariable ["A3A_tweak_saveRadiusHQ", 50];

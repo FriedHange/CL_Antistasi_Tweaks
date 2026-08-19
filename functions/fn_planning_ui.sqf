@@ -1262,13 +1262,15 @@ if (isNull _ctrlTitleCheck) then {
 if (A3A_planning_objective != "") then {
 	private _targetPos = getMarkerPos A3A_planning_objective;
 	if (_targetPos distance2D [0, 0, 0] > 100) then {
+		private _aoRadius = [A3A_planning_objective] call A3A_fnc_planning_getAORadius;
 		private _aoMarker = "A3A_planning_AO";
 		if (_aoMarker in allMapMarkers) then {
 			_aoMarker setMarkerPosLocal _targetPos;
+			_aoMarker setMarkerSizeLocal [_aoRadius, _aoRadius];
 		} else {
 			private _m = createMarkerLocal [_aoMarker, _targetPos];
 			_m setMarkerShapeLocal "ELLIPSE";
-			_m setMarkerSizeLocal [500, 500];
+			_m setMarkerSizeLocal [_aoRadius, _aoRadius];
 			_m setMarkerColorLocal "ColorRed";
 			_m setMarkerBrushLocal "GRID";
 		};

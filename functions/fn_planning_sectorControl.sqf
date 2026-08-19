@@ -111,86 +111,119 @@ private _fnc_postCapture = {
 			[_allRecoveredVehicles] call A3A_fnc_planning_serverAddGarage;
 		};
 
+		private _cities = missionNamespace getVariable ["citiesX", []];
+		private _markerDispName = markerText ("Dum" + _marker);
+		if (_markerDispName == "") then { _markerDispName = markerText _marker; };
+		if (_markerDispName == "" && !isNil "A3A_fnc_localizar") then { _markerDispName = [_marker] call A3A_fnc_localizar; };
+		if (_markerDispName == "") then { _markerDispName = _marker; };
+
 		// --- apply garrison (with Antistasi capacity capping & overflow refund) ---
 		if (_captureAction == 1 && { _totalGarrisonedCount > 0 }) then {
-			private _maxCapacity = if (!isNil "A3A_fnc_garrisonLimit") then {
-				[_marker] call A3A_fnc_garrisonLimit
+			if (_marker in _cities) then {
+				// Cities cannot have military garrisons in Antistasi. Refund troops instead.
+				private _cityRefundMoney = 0;
+				private _cityRefundHR = 0;
+				{
+					_cityRefundMoney = _cityRefundMoney + (_x select 1);
+					_cityRefundHR = _cityRefundHR + (_x select 2);
+				} forEach _garrisonList;
+
+				_cityRefundMoney = round _cityRefundMoney;
+				_cityRefundHR = round _cityRefundHR;
+
+				if (_cityRefundMoney > 0 || _cityRefundHR > 0) then {
+					[_cityRefundHR, _cityRefundMoney] remoteExec ["A3A_fnc_resourcesFIA", 2];
+					diag_log format ["[A3A Planning] Refunded %1 siege troops (%2 HR, %3 €) for town %4 (towns cannot be garrisoned).", count _garrisonList, _cityRefundHR, _cityRefundMoney, _marker];
+				};
+
+				private _msg = format ["%1 secured! Refunded %2 € and %3 HR for surviving siege troops (towns cannot be garrisoned).", _markerDispName, _cityRefundMoney, _cityRefundHR];
+				if (count _allRecoveredVehicles > 0) then {
+					_msg = _msg + format [" Recovered %1 vehicles to HQ Garage.", count _allRecoveredVehicles];
+				};
+				[
+					"Siege Garrison",
+					_msg
+				] remoteExec ["A3A_fnc_customHint", 0];
 			} else {
-				private _airports = missionNamespace getVariable ["airportsX", []];
-				private _milbases = missionNamespace getVariable ["milbases", []];
-				private _outposts = missionNamespace getVariable ["outposts", []];
-				switch (true) do {
-					case (_marker in _airports): { 40 };
-					case (_marker in _milbases): { 30 };
-					case (_marker in _outposts): { 20 };
-					default { 20 };
-				}
-			};
-
-			private _existingGarrison = if (!isNil "garrison") then { garrison getVariable [_marker, []] } else { [] };
-			private _currentCount = count _existingGarrison;
-			private _availableSlots = (_maxCapacity - _currentCount) max 0;
-
-			private _unitsToGarrison = [];
-			private _unitsOverflow = [];
-
-			if (count _garrisonList <= _availableSlots) then {
-				_unitsToGarrison = _garrisonList;
-			} else {
-				_unitsToGarrison = _garrisonList select [0, _availableSlots];
-				_unitsOverflow = _garrisonList select [_availableSlots, (count _garrisonList) - _availableSlots];
-			};
-
-			if (count _unitsToGarrison > 0) then {
-				private _classnamesToGarrison = _unitsToGarrison apply { _x select 0 };
-				diag_log format ["[A3A Planning] Garrisoning %1 surviving siege troops at '%2' (Cap: %3, Existing: %4, Available: %5).", count _classnamesToGarrison, _marker, _maxCapacity, _currentCount, _availableSlots];
-				[_classnamesToGarrison, teamPlayer, _marker, 2] remoteExec ["A3A_fnc_garrisonUpdate", 2];
-
-				// If the zone is currently loaded by a player (spawner != 2), physically spawn the garrison units in the world immediately
-				private _spawnerState = if (!isNil "spawner") then { spawner getVariable [_marker, 2] } else { 2 };
-				if (_spawnerState != 2) then {
-					diag_log format ["[A3A Planning] Zone '%1' is currently loaded (spawner=%2). Spawning %3 garrison units via createSDKGarrisonsTemp.", _marker, _spawnerState, count _classnamesToGarrison];
-					[_marker, _classnamesToGarrison] spawn {
-						params ["_marker", "_units"];
-						{
-							if (!isNil "A3A_fnc_createSDKGarrisonsTemp") then {
-								[_marker, _x] remoteExec ["A3A_fnc_createSDKGarrisonsTemp", 2];
-							};
-							sleep 0.3;
-						} forEach _units;
+				private _maxCapacity = if (!isNil "A3A_fnc_garrisonLimit") then {
+					[_marker] call A3A_fnc_garrisonLimit
+				} else {
+					private _airports = missionNamespace getVariable ["airportsX", []];
+					private _milbases = missionNamespace getVariable ["milbases", []];
+					private _outposts = missionNamespace getVariable ["outposts", []];
+					switch (true) do {
+						case (_marker in _airports): { 40 };
+						case (_marker in _milbases): { 30 };
+						case (_marker in _outposts): { 20 };
+						default { 20 };
 					};
 				};
-			};
 
-			if (count _unitsOverflow > 0) then {
-				private _overflowMoney = 0;
-				private _overflowHR = 0;
-				{
-					_overflowMoney = _overflowMoney + (_x select 1);
-					_overflowHR = _overflowHR + (_x select 2);
-				} forEach _unitsOverflow;
+				private _existingGarrison = if (!isNil "garrison") then { garrison getVariable [_marker, []] } else { [] };
+				private _currentCount = count _existingGarrison;
+				private _availableSlots = (_maxCapacity - _currentCount) max 0;
 
-				_overflowMoney = round _overflowMoney;
-				_overflowHR = round _overflowHR;
+				private _unitsToGarrison = [];
+				private _unitsOverflow = [];
 
-				if (_overflowMoney > 0 || _overflowHR > 0) then {
-					[_overflowHR, _overflowMoney] remoteExec ["A3A_fnc_resourcesFIA", 2];
-					diag_log format ["[A3A Planning] Refunded %1 overflow siege troops (%2 HR, %3 €) exceeding garrison capacity at %4.", count _unitsOverflow, _overflowHR, _overflowMoney, _marker];
+				if (count _garrisonList <= _availableSlots) then {
+					_unitsToGarrison = _garrisonList;
+				} else {
+					_unitsToGarrison = _garrisonList select [0, _availableSlots];
+					_unitsOverflow = _garrisonList select [_availableSlots, (count _garrisonList) - _availableSlots];
 				};
-			};
 
-			private _msg = format ["Garrisoned %1 surviving siege troops at %2 (Capacity: %3/%4).", count _unitsToGarrison, markerText ("Dum" + _marker), (count _unitsToGarrison + _currentCount) min _maxCapacity, _maxCapacity];
-			if (count _unitsOverflow > 0) then {
-				_msg = _msg + format [" Refunded %1 overflow troops.", count _unitsOverflow];
-			};
-			if (count _allRecoveredVehicles > 0) then {
-				_msg = _msg + format [" Recovered %1 vehicles to HQ Garage.", count _allRecoveredVehicles];
-			};
+				if (count _unitsToGarrison > 0) then {
+					private _classnamesToGarrison = _unitsToGarrison apply { _x select 0 };
+					diag_log format ["[A3A Planning] Garrisoning %1 surviving siege troops at '%2' (Cap: %3, Existing: %4, Available: %5).", count _classnamesToGarrison, _marker, _maxCapacity, _currentCount, _availableSlots];
+					[_classnamesToGarrison, teamPlayer, _marker, 2] remoteExec ["A3A_fnc_garrisonUpdate", 2];
 
-			[
-				"Siege Garrison",
-				_msg
-			] remoteExec ["A3A_fnc_customHint", 0];
+					// If the zone is currently loaded by a player (spawner != 2), physically spawn the garrison units in the world immediately
+					private _spawnerState = if (!isNil "spawner") then { spawner getVariable [_marker, 2] } else { 2 };
+					if (_spawnerState != 2) then {
+						diag_log format ["[A3A Planning] Zone '%1' is currently loaded (spawner=%2). Spawning %3 garrison units via createSDKGarrisonsTemp.", _marker, _spawnerState, count _classnamesToGarrison];
+						[_marker, _classnamesToGarrison] spawn {
+							params ["_marker", "_units"];
+							{
+								if (!isNil "A3A_fnc_createSDKGarrisonsTemp") then {
+									[_marker, _x] remoteExec ["A3A_fnc_createSDKGarrisonsTemp", 2];
+								};
+								sleep 0.3;
+							} forEach _units;
+						};
+					};
+				};
+
+				if (count _unitsOverflow > 0) then {
+					private _overflowMoney = 0;
+					private _overflowHR = 0;
+					{
+						_overflowMoney = _overflowMoney + (_x select 1);
+						_overflowHR = _overflowHR + (_x select 2);
+					} forEach _unitsOverflow;
+
+					_overflowMoney = round _overflowMoney;
+					_overflowHR = round _overflowHR;
+
+					if (_overflowMoney > 0 || _overflowHR > 0) then {
+						[_overflowHR, _overflowMoney] remoteExec ["A3A_fnc_resourcesFIA", 2];
+						diag_log format ["[A3A Planning] Refunded %1 overflow siege troops (%2 HR, %3 €) exceeding garrison capacity at %4.", count _unitsOverflow, _overflowHR, _overflowMoney, _marker];
+					};
+				};
+
+				private _msg = format ["Garrisoned %1 surviving siege troops at %2 (Capacity: %3/%4).", count _unitsToGarrison, _markerDispName, (count _unitsToGarrison + _currentCount) min _maxCapacity, _maxCapacity];
+				if (count _unitsOverflow > 0) then {
+					_msg = _msg + format [" Refunded %1 overflow troops.", count _unitsOverflow];
+				};
+				if (count _allRecoveredVehicles > 0) then {
+					_msg = _msg + format [" Recovered %1 vehicles to HQ Garage.", count _allRecoveredVehicles];
+				};
+
+				[
+					"Siege Garrison",
+					_msg
+				] remoteExec ["A3A_fnc_customHint", 0];
+			};
 		};
 
 		// --- apply refund ---
@@ -202,7 +235,7 @@ private _fnc_postCapture = {
 			[_totalRefundHR, _totalRefundMoney] remoteExec ["A3A_fnc_resourcesFIA", 2];
 			[
 				"Siege Refund",
-				format ["Refunded %1 € and %2 HR for surviving siege troops at %3.", _totalRefundMoney, _totalRefundHR, markerText ("Dum" + _marker)]
+				format ["Refunded %1 € and %2 HR for surviving siege troops at %3.", _totalRefundMoney, _totalRefundHR, _markerDispName]
 			] remoteExec ["A3A_fnc_customHint", 0];
 		};
 
@@ -225,117 +258,272 @@ private _fnc_postCapture = {
 // Main loop
 // ---------------------------------------------------------------------------
 while { true } do {
-	sleep 8;
+	sleep 5;
 
 	if (call A3A_fnc_planning_isSiegeActive) then {
 		private _marker = A3A_planning_objective;
 		private _side = sidesX getVariable [_marker, sideUnknown];
 		private _targetPos = getMarkerPos _marker;
 
-		        // --- SCENARIO A: Sector has already been captured (e.g., manually by player) ---
-		        // This catches cases where the player seizes the flag manually before our AI
-		        // gets to it, or any external capture that changes the side to teamPlayer.
+		// --- SCENARIO A: Sector has already been captured (e.g., manually by player) ---
 		if (_side == teamPlayer) then {
 			[_marker] call _fnc_postCapture;
 		} else {
-			// --- SCENARIO B: Assault in progress (enemies still own the position) ---
+			// --- SCENARIO B: Assault in progress ---
 
-			// count remaining enemy defenders within the AO (radius scaled by location type)
-			private _airports = missionNamespace getVariable ["airportsX", []];
-			private _milbases = missionNamespace getVariable ["milbases", []];
-			private _outposts = missionNamespace getVariable ["outposts", []];
-			private _scanRadius = switch (true) do {
-				case (_marker in _airports): { 450 };
-				case (_marker in _milbases): { 350 };
-				case (_marker in _outposts): { 250 };
-				default { 200 };
-			};
+			// Get the active AO radius (using dynamic calculation: >=750m for airports, >=450m for milbases, etc.)
+			private _aoRadius = [_marker] call A3A_fnc_planning_getAORadius;
 
-			private _totalEnemies = {
+			// Scan all relevant enemy defenders across the entire configured AO
+			private _enemyUnits = allUnits select {
 				alive _x && {
-					side _x == Occupants || {
-						side _x == Invaders
+					(side _x == Occupants || side _x == Invaders) && {
+						!captive _x && {
+							lifeState _x != "INCAPACITATED" && {
+								!(_x getVariable ["incapacitated", false]) && {
+									[_x, _marker] call A3A_fnc_planning_isInsideAO
+								}
+							}
+						}
 					}
-				} && {
-					_x distance2D _targetPos < _scanRadius
 				}
-			} count allUnits;
+			};
+			private _totalEnemies = count _enemyUnits;
 
 			private _aliveGroups = A3A_planning_activeGroups select {
 				!isNull _x && {
-					count (units _x) > 0
+					count (units _x select { alive _x }) > 0
 				}
 			};
 			private _autoCapture = missionNamespace getVariable ["A3A_planning_autoCapture", true];
 
-			// Only ASSAULT infantry squads are eligible to physically walk onto the flag pole while available.
-			private _hasAssault = {
-				(_x getVariable ["siege_role", "ASSAULT"]) == "ASSAULT"
-			} count _aliveGroups > 0;
+			// Include all viable ground troops (assault infantry squads, combat vehicles, and unmounted support teams)
+			// to actively hunt down remaining enemy AI troops across the entire AO.
+			private _clearingGroups = _aliveGroups select {
+				private _role = _x getVariable ["siege_role", "ASSAULT"];
+				private _isStaticDeployed = _x getVariable ["siege_isStaticDeployed", false];
+				(_role in ["ASSAULT", "VEHICLE", "CREW", "INFANTRY"]) || (!_isStaticDeployed && { _role in ["MG", "MORTAR"] })
+			};
 
-			// Maintain aggressive assault momentum & extract infantry stuck in buildings
+			// Maintain aggressive assault momentum & extract infantry stuck on terrain/buildings
 			{
-				if ((_x getVariable ["siege_role", "ASSAULT"]) == "ASSAULT") then {
-					private _ldr = leader _x;
-					if (alive _ldr) then {
-						private _lastPos = _x getVariable ["siege_lastPos", [0, 0, 0]];
-						private _stuckCount = _x getVariable ["siege_stuckCount", 0];
-						private _curPos = getPosATL _ldr;
+				private _ldr = leader _x;
+				if (alive _ldr) then {
+					private _assignedDest = _x getVariable ["siege_clearingTarget", _targetPos];
+					private _lastPos = _x getVariable ["siege_lastPos", [0, 0, 0]];
+					private _stuckCount = _x getVariable ["siege_stuckCount", 0];
+					private _curPos = getPosATL _ldr;
 
-						if (_curPos distance2D _lastPos < 2.5 && { _curPos distance2D _targetPos > 25 }) then {
-							_stuckCount = _stuckCount + 1;
-							_x setVariable ["siege_stuckCount", _stuckCount];
+					if (_curPos distance2D _lastPos < 2.5 && { _curPos distance2D _assignedDest > 20 }) then {
+						_stuckCount = _stuckCount + 1;
+						_x setVariable ["siege_stuckCount", _stuckCount];
 
-							if (_stuckCount >= 3) then { // Stuck for > 24 seconds
-								diag_log format ["[A3A Planning] Un-sticking squad %1 stuck near building at %2", groupId _x, _curPos];
-								_x setBehaviour "AWARE";
-								_x setSpeedMode "FULL";
-								_x setFormation "LINE";
-								{
-									if (alive _x && { vehicle _x == _x }) then {
-										_x setUnitPos "UP";
-										private _dest = _targetPos vectorAdd [random 20 - 10, random 20 - 10, 0];
-										_x doMove _dest;
-									};
-								} forEach (units _x);
-								_x setVariable ["siege_stuckCount", 0];
-							};
-						} else {
-							_x setVariable ["siege_lastPos", _curPos];
+						if (_stuckCount >= 3) then { // Stuck for >= 15 seconds
+							diag_log format ["[A3A Planning] Un-sticking squad %1 stuck near %2 moving to %3", groupId _x, _curPos, _assignedDest];
+							_x setBehaviour "AWARE";
+							_x setSpeedMode "FULL";
+							_x setFormation "LINE";
+							{
+								if (alive _x && { vehicle _x == _x }) then {
+									_x setUnitPos "UP";
+									private _dest = _assignedDest vectorAdd [random 20 - 10, random 20 - 10, 0];
+									_x doMove _dest;
+								};
+							} forEach (units _x);
 							_x setVariable ["siege_stuckCount", 0];
-							if ((behaviour _ldr) in ["COMBAT", "STEALTH"]) then {
-								_x setSpeedMode "FULL";
-								_x setFormation "LINE";
-							};
+						};
+					} else {
+						_x setVariable ["siege_lastPos", _curPos];
+						_x setVariable ["siege_stuckCount", 0];
+						if ((behaviour _ldr) in ["COMBAT", "STEALTH"]) then {
+							_x setSpeedMode "FULL";
+							_x setFormation "LINE";
 						};
 					};
 				};
-			} forEach _aliveGroups;
+			} forEach _clearingGroups;
 
-			private _captureEligibleRoles = if (_hasAssault) then { ["ASSAULT"] } else { ["ASSAULT", "VEHICLE"] };
+			// --- DYNAMIC AO PERIMETER CLEARING LOOP ---
+			if (_totalEnemies > 0) then {
+				// Group detected enemies into spatial/tactical clusters (within 45m of each other)
+				private _clusters = [];
+				{
+					private _u = _x;
+					private _uPos = getPosATL _u;
+					private _veh = vehicle _u;
+					private _isStatic = (_veh != _u) && { _veh isKindOf "StaticWeapon" };
+					private _isVeh = (_veh != _u) && { !_isStatic };
 
-			private _captureEligibleGroups = _aliveGroups select {
-				(_x getVariable ["siege_role", "ASSAULT"]) in _captureEligibleRoles
-			};
+					private _merged = false;
+					{
+						_x params ["_cPos", "_cUnits", "_cHasVeh", "_cHasStatic"];
+						if (_uPos distance2D _cPos < 45) exitWith {
+							_cUnits pushBack _u;
+							if (_isVeh) then { _x set [2, true]; };
+							if (_isStatic) then { _x set [3, true]; };
+							_merged = true;
+						};
+					} forEach _clusters;
 
-			if (_autoCapture && {
-				_totalEnemies == 0
-			}) then {
-				// All enemies within 150m are eliminated! get nearest surviving eligible group
-				if (count _captureEligibleGroups > 0) then {
-					// find group closest to the flag
-					private _sortedGroups = [_captureEligibleGroups, [], {
+					if (!_merged) then {
+						_clusters pushBack [_uPos, [_u], _isVeh, _isStatic, 0];
+					};
+				} forEach _enemyUnits;
+
+				// Calculate centroid and priority score for each cluster
+				{
+					_x params ["_cPos", "_cUnits", "_cHasVeh", "_cHasStatic"];
+					private _sumX = 0; private _sumY = 0; private _sumZ = 0;
+					private _n = count _cUnits;
+					{
+						private _p = getPosATL _x;
+						_sumX = _sumX + (_p select 0);
+						_sumY = _sumY + (_p select 1);
+						_sumZ = _sumZ + (_p select 2);
+					} forEach _cUnits;
+					private _centroid = [_sumX / _n, _sumY / _n, _sumZ / _n];
+					_x set [0, _centroid];
+
+					// Priority Scoring:
+					// 1. Vehicles: +50
+					// 2. Statics: +40
+					// 3. Concentration: + (count * 6)
+					// 4. Threats close to friendly troops (<150m): +30
+					private _score = 40;
+					if (_cHasVeh) then { _score = _score + 50; };
+					if (_cHasStatic) then { _score = _score + 40; };
+					if (_n >= 2) then { _score = _score + (_n * 6); };
+
+					private _nearFriendly = false;
+					{
+						private _fLdr = leader _x;
+						if (alive _fLdr && { (_centroid distance2D _fLdr) < 150 }) exitWith {
+							_nearFriendly = true;
+						};
+					} forEach _clearingGroups;
+					if (_nearFriendly) then { _score = _score + 30; };
+
+					_x set [4, _score];
+				} forEach _clusters;
+
+				// Assign suitable assault squads to clear detected enemy clusters
+				{
+					private _group = _x;
+					private _ldr = leader _group;
+					if (alive _ldr) then {
+						private _ldrPos = getPosATL _ldr;
+						private _inAO = (_ldrPos distance2D _targetPos) <= (_aoRadius + 150);
+
+						if (_inAO) then {
+							private _curTarget = _group getVariable ["siege_clearingTarget", [0, 0, 0]];
+							private _assignedTime = _group getVariable ["siege_clearingTime", 0];
+
+							// Check if current assignment is still valid (alive enemies within 50m of target)
+							private _enemiesNearTarget = {
+								alive _x && {
+									(side _x == Occupants || side _x == Invaders) && {
+										!captive _x && {
+											(_x distance2D _curTarget) < 50
+										}
+									}
+								}
+							} count allUnits;
+
+							private _needsNewTarget = (_curTarget isEqualTo [0, 0, 0]) || { _enemiesNearTarget == 0 } || { (time - _assignedTime) > 30 };
+
+							if (_needsNewTarget && { count _clusters > 0 }) then {
+								// Find the best cluster for this squad
+								private _bestCluster = [];
+								private _bestScore = -1e9;
+
+								{
+									_x params ["_cPos", "_cUnits", "_cHasVeh", "_cHasStatic", "_baseScore"];
+									private _dist = _ldrPos distance2D _cPos;
+
+									// Count other squads already clearing this cluster
+									private _otherAssigned = 0;
+									{
+										if (_x != _group) then {
+											private _otherTgt = _x getVariable ["siege_clearingTarget", [0, 0, 0]];
+											if (_otherTgt distance2D _cPos < 45) then {
+												_otherAssigned = _otherAssigned + 1;
+											};
+										};
+									} forEach _clearingGroups;
+
+									private _effScore = _baseScore - (_dist * 0.1) - (_otherAssigned * 35);
+									if ((_group getVariable ["siege_role", "ASSAULT"]) == "VEHICLE" && { _cHasVeh || _cHasStatic }) then {
+										_effScore = _effScore + 40;
+									};
+									if (_effScore > _bestScore) then {
+										_bestScore = _effScore;
+										_bestCluster = _x;
+									};
+								} forEach _clusters;
+
+								if (count _bestCluster > 0) then {
+									private _chosenPos = _bestCluster select 0;
+									private _chosenUnits = _bestCluster select 1;
+
+									_group setVariable ["siege_clearingTarget", _chosenPos, true];
+									_group setVariable ["siege_clearingTime", time, true];
+									_group setVariable ["siege_orderedToFlag", false, true];
+
+									for "_i" from (count (waypoints _group) - 1) to 0 step -1 do {
+										deleteWaypoint [_group, _i];
+									};
+									private _wp = _group addWaypoint [_chosenPos, 0];
+									_wp setWaypointType "SAD";
+									_wp setWaypointBehaviour "COMBAT";
+									_wp setWaypointCombatMode "RED";
+									_wp setWaypointSpeed "FULL";
+									_wp setWaypointCompletionRadius 25;
+									[_group, _wp select 1] remoteExec ["A3A_fnc_planning_localSetCurrentWaypoint", groupOwner _group];
+
+									_group setBehaviour "COMBAT";
+									_group setCombatMode "RED";
+									_group setSpeedMode "FULL";
+
+									// Reveal enemies to squad
+									{
+										_group reveal [_x, 4];
+									} forEach _chosenUnits;
+
+									// Issue immediate movement command to all units in the group
+									{
+										if (alive _x) then {
+											private _veh = vehicle _x;
+											if (_veh != _x) then {
+												private _drv = driver _veh;
+												if (!isNull _drv && { alive _drv }) then {
+													[_drv, _chosenPos] remoteExec ["A3A_fnc_planning_localDoMove", owner _drv];
+												};
+											} else {
+												[_x, _chosenPos] remoteExec ["A3A_fnc_planning_localDoMove", owner _x];
+											};
+										};
+									} forEach (units _group);
+
+									diag_log format ["[A3A Planning] Squad %1 dispatched to clear AO perimeter target at %2 (%3 enemies, score: %4).", groupId _group, _chosenPos, count _chosenUnits, _bestScore];
+								};
+							};
+						};
+					};
+				} forEach _clearingGroups;
+			} else {
+				// --- STEP G: AO Perimeter is completely clear (0 enemies remaining) ---
+				if (_autoCapture && { count _clearingGroups > 0 }) then {
+					private _sortedGroups = [_clearingGroups, [], {
 						(leader _x) distance2D _targetPos
 					}, "ASCEND"] call BIS_fnc_sortBy;
 					private _closestGroup = _sortedGroups select 0;
 
-					                    // Order them to move directly to the flag position
+					// Order closest squad to move onto the flag
 					if (_closestGroup getVariable ["siege_orderedToFlag", false] isNotEqualTo true) then {
 						_closestGroup setVariable ["siege_orderedToFlag", true, true];
-						diag_log format ["[A3A Planning] All enemies eliminated. Ordering group %1 to seize the flag at %2.", groupId _closestGroup, _targetPos];
+						diag_log format ["[A3A Planning] AO perimeter fully cleared (0 enemies). Ordering squad %1 to seize flag at %2.", groupId _closestGroup, _targetPos];
 
-						                        // Clear waypoints and assign a move waypoint directly on top of the flag
-						for "_i" from (count (waypoints _closestGroup) - 1) to 1 step -1 do {
+						for "_i" from (count (waypoints _closestGroup) - 1) to 0 step -1 do {
 							deleteWaypoint [_closestGroup, _i];
 						};
 						private _wp = _closestGroup addWaypoint [_targetPos, 0];
@@ -348,7 +536,7 @@ while { true } do {
 						_closestGroup setSpeedMode "FULL";
 					};
 
-					// Refresh movement orders for all units in the closest group every loop tick
+					// Refresh movement orders towards the flag
 					private _orderedVehicles = [];
 					{
 						private _veh = vehicle _x;
@@ -365,7 +553,7 @@ while { true } do {
 						};
 					} forEach (units _closestGroup);
 
-					                    // Check if any friendly unit has reached the flag (within 15m)
+					// Check if any friendly unit has reached the flag (within 15m)
 					private _nearFlag = {
 						alive _x && {
 							side _x == teamPlayer
@@ -373,20 +561,16 @@ while { true } do {
 							_x distance2D _targetPos < 15
 						}
 					} count allUnits;
-					if (_nearFlag > 0 && {
-						!(missionNamespace getVariable ["A3A_planning_captureTriggered", false])
-					}) then {
+
+					if (_nearFlag > 0 && { !(missionNamespace getVariable ["A3A_planning_captureTriggered", false]) }) then {
 						diag_log format ["[A3A Planning] Rebel unit reached flag area. Seizing %1...", _marker];
 
 						A3A_planning_captureTriggered = true;
 						publicVariable "A3A_planning_captureTriggered";
 
-						                        // Put all surviving forces on a GUARD waypoint at the objective
-						                        // so they hold briefly while markerChange fires and cleans up.
+						// Put all surviving forces on GUARD waypoint at objective
 						{
-							if (!isNull _x && {
-								count (units _x) > 0
-							}) then {
+							if (!isNull _x && { count (units _x select { alive _x }) > 0 }) then {
 								for "_i" from (count (waypoints _x) - 1) to 0 step -1 do {
 									deleteWaypoint [_x, _i];
 								};
@@ -398,21 +582,25 @@ while { true } do {
 							};
 						} forEach _aliveGroups;
 
-						                        // Trigger the native Antistasi sector capture (side flip)
-						[teamPlayer, _marker] spawn A3A_fnc_markerChange;
-
-						                        // Clean up map markers on clients immediately
+						private _cities = missionNamespace getVariable ["citiesX", []];
+						if (_marker in _cities) then {
+							sidesX setVariable [_marker, teamPlayer, true];
+							private _cityData = server getVariable [_marker, [0, 0, 0, 0]];
+							_cityData set [2, 0];
+							_cityData set [3, 100];
+							server setVariable [_marker, _cityData, true];
+							[Occupants, 10, 60] remoteExec ["A3A_fnc_addAggression", 2];
+							garrison setVariable [_marker, [], true];
+							if (!isNil "A3A_fnc_mrkUpdate") then { [_marker] call A3A_fnc_mrkUpdate; };
+							["TaskSucceeded", ["", format [localize "STR_notifiers_city_joined", _marker, (A3A_faction_reb get "name")]]] remoteExec ["BIS_fnc_showNotification", teamPlayer];
+							if (!isNil "A3A_fnc_tierCheck") then { [] call A3A_fnc_tierCheck; };
+						} else {
+							[teamPlayer, _marker] spawn A3A_fnc_markerChange;
+						};
 						[true] remoteExec ["A3A_fnc_planning_localCleanupMarkers", 0];
 
-						                        // --- ISSUE 1 FIX: Process survivors immediately ---
-						                        // markerChange runs asynchronously (spawn), so wait a brief moment
-						                        // for the side variable to be written before processing.
-						                        // We call _fnc_postCapture in a short-delay spawn so the main
-						                        // loop does not block, but survivors are processed on this same
-						                        // tick rather than waiting up to 8s for the next iteration.
 						[_marker, _fnc_postCapture] spawn {
 							params ["_marker", "_fnc_postCapture"];
-							// Wait up to 5s for markerChange to flip the side variable
 							private _timeout = time + 5;
 							while { (sidesX getVariable [_marker, sideUnknown]) != teamPlayer && { time < _timeout } } do {
 								sleep 0.5;
@@ -421,26 +609,41 @@ while { true } do {
 						};
 					};
 				};
-			} else {
-				// if there are no surviving rebel groups and target is still enemy-controlled, the siege has failed
-				if (count _aliveGroups == 0 && {
-					count A3A_planning_activeGroups > 0
-				}) then {
-					diag_log format ["[A3A Planning] Siege failed for %1. All forces eliminated.", _marker];
 
-					A3A_planning_activeGroups = [];
-					publicVariable "A3A_planning_activeGroups";
-
-					A3A_planning_assaultStarted = false;
-					publicVariable "A3A_planning_assaultStarted";
-
-					A3A_planning_stage = 1;
-
-					[
-						"Siege Failed",
-						"All assault forces have been eliminated. The planning markers remain active for reinforcement waves."
-					] remoteExec ["A3A_fnc_customHint", 0];
+				// If autoCapture is false, put assault groups on GUARD around objective
+				if (!_autoCapture && { count _clearingGroups > 0 }) then {
+					{
+						if (_x getVariable ["siege_guardingCleared", false] isNotEqualTo true) then {
+							_x setVariable ["siege_guardingCleared", true, true];
+							for "_i" from (count (waypoints _x) - 1) to 0 step -1 do {
+								deleteWaypoint [_x, _i];
+							};
+							private _wp = _x addWaypoint [_targetPos, 0];
+							_wp setWaypointType "GUARD";
+							_x setBehaviour "AWARE";
+							_x setCombatMode "RED";
+							[_x, _wp select 1] remoteExec ["A3A_fnc_planning_localSetCurrentWaypoint", groupOwner _x];
+						};
+					} forEach _clearingGroups;
 				};
+			};
+
+			// Check for siege failure
+			if (count _aliveGroups == 0 && { count A3A_planning_activeGroups > 0 }) then {
+				diag_log format ["[A3A Planning] Siege failed for %1. All forces eliminated.", _marker];
+
+				A3A_planning_activeGroups = [];
+				publicVariable "A3A_planning_activeGroups";
+
+				A3A_planning_assaultStarted = false;
+				publicVariable "A3A_planning_assaultStarted";
+
+				A3A_planning_stage = 1;
+
+				[
+					"Siege Failed",
+					"All assault forces have been eliminated. The planning markers remain active for reinforcement waves."
+				] remoteExec ["A3A_fnc_customHint", 0];
 			};
 		};
 	};

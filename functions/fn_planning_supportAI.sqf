@@ -344,6 +344,8 @@ while { !_done } do {
 		}
 	}) exitWith {
 		diag_log format ["[A3A Tweaks] %1 has expended its deployments/ammunition (%2/%3 rounds fired). Surviving crew converting to assault infantry.", groupId _group, _mortarRoundsFired, _maxMortarRoundsCfg];
+		_group setVariable ["siege_role", "ASSAULT", true];
+		_group setVariable ["siege_isStaticDeployed", false, true];
 		if (!isNull _staticVeh) then {
 			{
 				unassignVehicle _x;
@@ -374,7 +376,9 @@ while { !_done } do {
 			[_x] orderGetIn false;
 		} forEach (crew _staticVeh);
 		deleteVehicle _staticVeh;
-		_staticVeh = objNull; sleep 1;
+		_staticVeh = objNull;
+		_group setVariable ["siege_isStaticDeployed", false, true];
+		sleep 1;
 	};
 	_cRange = 0;
 	_cLOS = 0; _cNoTargets = 0;
@@ -501,6 +505,7 @@ while { !_done } do {
 	_staticVeh = createVehicle [_staticClass, getPosATL (leader _group), [], 0, "NONE"];
 	[_staticVeh, teamPlayer] call A3A_fnc_AIVEHinit;
 	_staticVeh allowCrewInImmobile true;
+	_group setVariable ["siege_isStaticDeployed", true, true];
 	_lastDeployTime = time;
 	private _gunner = selectRandom (units _group);
 	_watcher = ((units _group) - [_gunner]) param [0, objNull];
@@ -576,14 +581,16 @@ while { !_done } do {
 			_cLOS = 0;
 		};
 
-		        // Mortars only ever consider targets tied to the ACTIVE objective: inside the AO
-		        // radius around the objective marker, or actively engaged with/near the advancing
-		        // frontline. A stray patrol or roadblock crew 2km away no longer qualifies just
-		        // because it's within mortar range - it has to be relevant to this siege.
-		        // Hardcoded (no longer lobby-tweakable): 600m mortar area-of-operations radius.
-		private _aoRadius = 600;
+		// Mortars only ever consider targets tied to the ACTIVE objective: inside the AO
+		// radius around the objective marker, or actively engaged with/near the advancing
+		// frontline. A stray patrol or roadblock crew 2km away no longer qualifies just
+		// because it's within mortar range - it has to be relevant to this siege.
+		private _aoRadius = if (!isNil "A3A_fnc_planning_getAORadius") then { [_targetMarker] call A3A_fnc_planning_getAORadius } else { 600 };
 		private _fnc_isOnObjective = {
 			params ["_unit"];
+			if (!isNil "A3A_fnc_planning_isInsideAO" && { [_unit, _targetMarker] call A3A_fnc_planning_isInsideAO }) exitWith {
+				true
+			};
 			private _p = getPosATL _unit;
 			if (_p distance2D _liveObjPos < _aoRadius) exitWith {
 				true
