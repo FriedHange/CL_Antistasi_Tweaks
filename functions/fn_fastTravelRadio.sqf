@@ -1,12 +1,17 @@
 /*
     fn_fastTravelRadio.sqf
-    Overridden fast travel handler supporting customizable fast travel travel times and instant travel.
-    Fixed compatibility with Point Campfire (limitedFT == 3) and No Fast Travel (limitedFT == 0).
+    Overridden fast travel handler supporting customizable fast travel travel times, instant travel,
+    and full compatibility with Antistasi Ultimate fast travel settings.
 */
+params [
+    ["_quickMarker", "", [""]]
+];
+
 private _markersX = markersX + [respawnTeamPlayer];
 
 private _titleStr = "Fast Travel";
-if (limitedFT == 0) exitWith {[_titleStr, "Fast travel is disabled for this server."] call A3A_fnc_customHint};
+if (isNil "limitedFT") then { limitedFT = 0; };
+if (limitedFT == 3) exitWith {[_titleStr, "Fast travel is disabled for this server."] call A3A_fnc_customHint};
 
 if (!isNil "traderMarker") then {
 	_markersX pushBack traderMarker;
@@ -29,7 +34,7 @@ if (count hcSelected player == 1) then {
 	_groupX = group player;
 };
 private _checkForPlayer = false;
-if (!_esHC and {(limitedFT == 2 or limitedFT == 3)}) then {_checkForPlayer = true};
+if (!_esHC and {(limitedFT == 1 or limitedFT == 2)}) then {_checkForPlayer = true};
 private _boss = leader _groupX;
 
 if (_boss != player and {!_esHC}) then {_groupX = player};
@@ -60,10 +65,18 @@ if (_units findIf {
 
 positionTel = [];
 
-[localize "STR_A3A_Dialogs_fast_travel_header", localize "STR_A3A_Dialogs_fast_travel_click"] call A3A_fnc_customHint;
+if (_quickMarker == "") then {[localize "STR_A3A_Dialogs_fast_travel_header", localize "STR_A3A_Dialogs_fast_travel_click"] call A3A_fnc_customHint;};
 if (!visibleMap) then {openMap true};
 showCommandingMenu "";
-onMapSingleClick "positionTel = _pos; true";
+
+if !(_quickMarker == "") then {
+	private _quickMarkerPosition = getMarkerPos _quickMarker;
+	_quickMarkerPosition set [0, (_quickMarkerPosition select 0) + 0.1];
+	_quickMarkerPosition set [1, (_quickMarkerPosition select 1) + 0.1];
+	positionTel = _quickMarkerPosition;
+} else {
+	onMapSingleClick "positionTel = _pos; true";
+};
 
 waitUntil {sleep 1; (count positionTel > 0) or {not visiblemap}};
 onMapSingleClick "";
@@ -104,24 +117,15 @@ if (_positionTel isEqualTo []) exitWith {
 
 private _base = [_markersX, _positionTel] call BIS_fnc_nearestPosition;
 
-if (_base == traderMarker && {isTraderQuestAssigned || !isTraderQuestCompleted}) exitWith {
+private _traderExists = !(isNil "traderMarker");
+if (_traderExists && {_base == traderMarker && {isTraderQuestAssigned || !isTraderQuestCompleted}}) exitWith {
 	[localize "STR_A3A_Dialogs_fast_travel_header", localize "STR_A3A_Dialogs_fast_travel_trader_locked"] call SCRT_fnc_misc_deniedHint;
 };
 
 private _rebelMarkers = if (!isNil "traderMarker") then {["Synd_HQ", traderMarker]} else {["Synd_HQ"]};
+private _isValidTargetLocation = (_base in (_rebelMarkers + airportsX + milbases));
 
-// Determine valid target location based on limitedFT mode
-private _isValidTargetLocation = true;
-if (limitedFT == 2) then {
-	// Mode 2: Destinations only (HQ, Airports, Milbases)
-	_isValidTargetLocation = (_base in (_rebelMarkers + airportsX + milbases));
-};
-if (limitedFT == 3) then {
-	// Mode 3: Point Campfire / Outposts (Any friendly rebel location: HQ, Airports, Milbases, Outposts, Resources, Factories, Seaports, Watchposts, Camps)
-	_isValidTargetLocation = (_base in _rebelMarkers) or {(sidesX getVariable [_base, sideUnknown]) == teamPlayer};
-};
-
-if (_checkForPlayer && (limitedFT == 2 or limitedFT == 3) && !_isValidTargetLocation) exitWith {
+if (_checkForPlayer && limitedFT == 1 && !_isValidTargetLocation) exitWith {
 	[localize "STR_A3A_Dialogs_fast_travel_header", localize "STR_A3A_Dialogs_fast_travel_limited"] call SCRT_fnc_misc_deniedHint;
 };
 
@@ -132,16 +136,7 @@ if (limitedFT == 2) then {
 	private _distanceToNearest = player distance getMarkerPos _nearestPosition;
 	_withinBoundaries = _distanceToNearest < 50;	
 };
-if (limitedFT == 3) then {
-	private _rebelLocations = markersX select { sidesX getVariable [_x, sideUnknown] == teamPlayer };
-	_rebelLocations pushBackUnique "Synd_HQ";
-	if (!isNil "traderMarker") then { _rebelLocations pushBackUnique traderMarker; };
-	private _nearestPosition = [_rebelLocations, player] call BIS_fnc_nearestPosition;
-	private _distanceToNearest = player distance getMarkerPos _nearestPosition;
-	_withinBoundaries = _distanceToNearest < 50;	
-};
-
-if (_checkForPlayer && (limitedFT == 2 or limitedFT == 3) && (!_isValidTargetLocation or !_withinBoundaries)) exitWith {
+if (_checkForPlayer && limitedFT == 2 && (!_isValidTargetLocation or !_withinBoundaries)) exitWith {
 	[localize "STR_A3A_Dialogs_fast_travel_header", localize "STR_A3A_Dialogs_fast_travel_limited_to_between_destinations"] call SCRT_fnc_misc_deniedHint;
 };
 
@@ -192,7 +187,7 @@ if (_positionTel distance getMarkerPos _base < 500) then {
 	};
 	
 	private _exit = false;
-	if (limitedFT == 2 or limitedFT == 3) then {
+	if (limitedFT == 1 or limitedFT == 2) then {
 		_vehicles = [];
 		{if (vehicle _x != _x) then {_vehicles pushBackUnique (vehicle _x)}} forEach units _groupX;
 		{if ((vehicle _x) in _vehicles) exitWith {_checkForPlayer = true}} forEach (call A3A_fnc_playableUnits);
@@ -257,8 +252,10 @@ if (_positionTel distance getMarkerPos _base < 500) then {
 	
 	sleep 5;
 	{_x allowDamage true} forEach _ftUnits;
+	if (!isNil "SCRT_fnc_ui_toggleMenuBlur") then { ['off'] call SCRT_fnc_ui_toggleMenuBlur; };
 } else {
 	[localize "STR_A3A_Dialogs_fast_travel_header", localize "STR_A3A_Dialogs_fast_travel_missclick"] call SCRT_fnc_misc_deniedHint;
 };
 
 if (!_esHC) then { openMap false };
+

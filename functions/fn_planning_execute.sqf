@@ -800,7 +800,8 @@ if (_mode in ["DEPLOY", "REINFORCE"]) then {
 			private _travelTime = round (_distance / 14);
 
 			            // apply configurable travel time multiplier
-			private _travelMult = missionNamespace getVariable ["A3A_tweak_siegeTravelTimeMultiplier", 1.0];
+			private _rawTravelMult = missionNamespace getVariable ["A3A_tweak_siegeTravelTimeMultiplier", 100];
+			private _travelMult = if (_rawTravelMult > 2) then { _rawTravelMult / 100 } else { _rawTravelMult };
 			_travelTime = round (_travelTime * _travelMult);
 
 			if (_travelMult == 0) then {

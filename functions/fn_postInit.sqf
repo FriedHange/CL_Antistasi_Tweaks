@@ -153,35 +153,35 @@ if (isServer) then {
 	diag_log "[A3A Ultimate Tweaks Extender] Loading and broadcasting lobby parameters...";
 	{
 		_x params ["_paramName", "_defaultValue"];
-		private _val = [_paramName, _defaultValue] call BIS_fnc_getParamValue;
+		private _val = missionNamespace getVariable [_paramName, [_paramName, _defaultValue] call BIS_fnc_getParamValue];
 		missionNamespace setVariable [_paramName, _val, true];
 		diag_log format ["[A3A Ultimate Tweaks Extender] Synced parameter: %1 = %2", _paramName, _val];
-		} forEach [
-			["A3A_tweak_autoBuild", 1],
-			["A3A_selfReviveTweak_NoKit", 0],
-			["A3A_selfReviveTweak_Cooldown", 300],
-			["A3A_selfReviveTweak_Damage", 50],
-			["A3A_tweak_saveRadiusHQ", 50],
-			["A3A_tweak_saveRadiusBuffer", 0],
-			["A3A_tweak_missionCooldown", 0],
-			["A3A_tweak_randomMissionChanceMultiplier", 1],
-			["A3A_tweak_fastTravelSpeedMultiplier", 1],
-			["A3A_tweak_builderChainRadius", 0],
-			["A3A_tweak_discoveryReveal", 1],
-			["A3A_tweak_discoveryDistance", 200],
-			["A3A_tweak_maxSiegeSquads", 10],
-			["A3A_tweak_siegeRefundOrGarrison", 1],
-			["A3A_tweak_siegeTravelTimeMultiplier", 1],
-			["A3A_tweak_siegeDeploymentMultiplier", 1.25],
-			["A3A_tweak_aiControlTimeOverride", 120],
-			["A3A_tweak_aiControlDamageThreshold", 0],
-			["A3A_tweak_unconsciousRespawnKey", 19],
-			["A3A_tweak_remoteHQMenu", 2],
-			["A3A_tweak_minSpawnDistance", 0]
-		];
-		private _overrideTime = missionNamespace getVariable ["A3A_tweak_aiControlTimeOverride", 120];
-		private _globalTime = if (_overrideTime == -1) then { 999999 } else { _overrideTime };
-		missionNamespace setVariable ["aiControlTime", _globalTime, true];
+	} forEach [
+		["A3A_tweak_autoBuild", 1],
+		["A3A_selfReviveTweak_NoKit", 0],
+		["A3A_selfReviveTweak_Cooldown", 300],
+		["A3A_selfReviveTweak_Damage", 50],
+		["A3A_tweak_saveRadiusHQ", 50],
+		["A3A_tweak_saveRadiusBuffer", 0],
+		["A3A_tweak_missionCooldown", 0],
+		["A3A_tweak_randomMissionChanceMultiplier", 100],
+		["A3A_tweak_fastTravelSpeedMultiplier", 1],
+		["A3A_tweak_builderChainRadius", 0],
+		["A3A_tweak_discoveryReveal", 1],
+		["A3A_tweak_discoveryDistance", 200],
+		["A3A_tweak_maxSiegeSquads", 10],
+		["A3A_tweak_siegeRefundOrGarrison", 1],
+		["A3A_tweak_siegeTravelTimeMultiplier", 100],
+		["A3A_tweak_siegeDeploymentMultiplier", 125],
+		["A3A_tweak_aiControlTimeOverride", 120],
+		["A3A_tweak_aiControlDamageThreshold", 0],
+		["A3A_tweak_unconsciousRespawnKey", 19],
+		["A3A_tweak_remoteHQMenu", 2],
+		["A3A_tweak_minSpawnDistance", 0]
+	];
+	private _overrideTime = missionNamespace getVariable ["A3A_tweak_aiControlTimeOverride", 120];
+	private _globalTime = if (_overrideTime == -1) then { 999999 } else { _overrideTime };
+	missionNamespace setVariable ["aiControlTime", _globalTime, true];
 
 		// AI Spawn Distance Override
 		private _minSpawnDist = missionNamespace getVariable ["A3A_tweak_minSpawnDistance", 0];

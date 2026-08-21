@@ -25,7 +25,10 @@ class CfgFunctions {
 
 class A3A {
     class Params {
-        class ExtenderParams; // Forward declaration
+        class AllParams;
+        class ExtenderParams : AllParams {
+            type = "Extender";
+        };
 
         // =====================================================
         // CL ANTISTASI TWEAKS - BUILDER
@@ -33,8 +36,8 @@ class A3A {
         class CL_Tweaks_Builder_Spacer : ExtenderParams {
             title = "--- CL Tweaks: Builder ---";
             tooltip = "Construction box and builder UI settings.";
-            values[] = {0};
-            texts[] = {""};
+            values[] = {};
+            texts[] = {};
             default = 0;
         };
         class A3A_tweak_autoBuild : ExtenderParams {
@@ -66,8 +69,8 @@ class A3A {
         class CL_Tweaks_SelfRevive_Spacer : ExtenderParams {
             title = "--- CL Tweaks: Self-Revive ---";
             tooltip = "Settings for the self-revive mechanic.";
-            values[] = {0};
-            texts[] = {""};
+            values[] = {};
+            texts[] = {};
             default = 0;
         };
         class A3A_selfReviveTweak_NoKit : ExtenderParams {
@@ -98,8 +101,8 @@ class A3A {
         class CL_Tweaks_Petros_Spacer : ExtenderParams {
             title = "--- CL Tweaks: Petros & Missions ---";
             tooltip = "Settings for Petros mission requests and random events.";
-            values[] = {0};
-            texts[] = {""};
+            values[] = {};
+            texts[] = {};
             default = 0;
         };
         class A3A_tweak_missionCooldown : ExtenderParams {
@@ -112,9 +115,9 @@ class A3A {
         class A3A_tweak_randomMissionChanceMultiplier : ExtenderParams {
             title = "Random Mission Chance";
             tooltip = "Multiplier for Petros triggering random missions periodically. Higher = more frequent random events.";
-            values[] = {0, 0.5, 1, 2, 5};
+            values[] = {0, 50, 100, 200, 500};
             texts[] = {"Disabled (0x)", "Half (0.5x)", "Normal (1x)", "Double (2x)", "High (5x)"};
-            default = 1;
+            default = 100;
         };
 
         // =====================================================
@@ -123,8 +126,8 @@ class A3A {
         class CL_Tweaks_FastTravel_Spacer : ExtenderParams {
             title = "--- CL Tweaks: Fast Travel ---";
             tooltip = "Settings for the fast travel system.";
-            values[] = {0};
-            texts[] = {""};
+            values[] = {};
+            texts[] = {};
             default = 0;
         };
         class A3A_tweak_fastTravelSpeedMultiplier : ExtenderParams {
@@ -141,8 +144,8 @@ class A3A {
         class CL_Tweaks_HQ_Spacer : ExtenderParams {
             title = "--- CL Tweaks: HQ & Bases ---";
             tooltip = "Settings for vehicle/static saving around HQ and friendly bases.";
-            values[] = {0};
-            texts[] = {""};
+            values[] = {};
+            texts[] = {};
             default = 0;
         };
         class A3A_tweak_saveRadiusHQ : ExtenderParams {
@@ -166,8 +169,8 @@ class A3A {
         class CL_Tweaks_FogOfWar_Spacer : ExtenderParams {
             title = "--- CL Tweaks: Fog of War ---";
             tooltip = "Settings for discovering and auto-revealing hidden enemy outposts.";
-            values[] = {0};
-            texts[] = {""};
+            values[] = {};
+            texts[] = {};
             default = 0;
         };
         class A3A_tweak_discoveryReveal : ExtenderParams {
@@ -191,8 +194,8 @@ class A3A {
         class CL_Tweaks_Siege_Spacer : ExtenderParams {
             title = "--- CL Tweaks: Siege Planning ---";
             tooltip = "Settings for siege and attack planning.";
-            values[] = {0};
-            texts[] = {""};
+            values[] = {};
+            texts[] = {};
             default = 0;
         };
         class A3A_tweak_maxSiegeSquads : ExtenderParams {
@@ -212,16 +215,16 @@ class A3A {
         class A3A_tweak_siegeTravelTimeMultiplier : ExtenderParams {
             title = "Siege Travel Time";
             tooltip = "Multiplier applied to the travel time for siege squads to reach their staging points.";
-            values[] = {0, 0.1, 0.25, 0.5, 1, 2};
+            values[] = {0, 10, 25, 50, 100, 200};
             texts[] = {"Instant", "10x Faster", "4x Faster", "2x Faster", "Default", "2x Slower"};
-            default = 1;
+            default = 100;
         };
         class A3A_tweak_siegeDeploymentMultiplier : ExtenderParams {
             title = "Strategic Deployment Multiplier";
             tooltip = "Multiplier applied to native Antistasi recruitment costs for siege operations to represent strategic planning logistics.";
-            values[] = {0.5, 0.75, 1, 1.25, 1.5, 2, 3};
+            values[] = {50, 75, 100, 125, 150, 200, 300};
             texts[] = {"0.5x", "0.75x", "1.0x", "1.25x", "1.5x", "2.0x", "3.0x"};
-            default = 1.25;
+            default = 125;
         };
 
         // =====================================================
@@ -230,8 +233,8 @@ class A3A {
         class CL_Tweaks_AIControl_Spacer : ExtenderParams {
             title = "--- CL Tweaks: AI Direct Control ---";
             tooltip = "Settings for directly controlling AI units.";
-            values[] = {0};
-            texts[] = {""};
+            values[] = {};
+            texts[] = {};
             default = 0;
         };
         class A3A_tweak_aiControlTimeOverride : ExtenderParams {
@@ -262,8 +265,8 @@ class A3A {
         class CL_Tweaks_Misc_Spacer : ExtenderParams {
             title = "--- CL Tweaks: Misc & Performance ---";
             tooltip = "Miscellaneous commander menu and spawn distance tweaks.";
-            values[] = {0};
-            texts[] = {""};
+            values[] = {};
+            texts[] = {};
             default = 0;
         };
         class A3A_tweak_remoteHQMenu : ExtenderParams {

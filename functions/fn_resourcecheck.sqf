@@ -181,7 +181,8 @@ while {true} do {
 	[petros, "taxRep", _textX] remoteExec ["A3A_fnc_commsMP", [teamPlayer, civilian]];
 
 	// Petros Random mission trigger chance (Applying customizable multiplier, capped at 50% max to avoid mission overload)
-	private _randomMult = missionNamespace getVariable ["A3A_tweak_randomMissionChanceMultiplier", 1.0];
+	private _rawRandomMult = missionNamespace getVariable ["A3A_tweak_randomMissionChanceMultiplier", 100];
+	private _randomMult = if (_rawRandomMult > 5) then { _rawRandomMult / 100 } else { _rawRandomMult };
 	private _missionChance = ((5 * A3A_activePlayerCount) * _randomMult) min 50;
 	if ((!bigAttackInProgress) and (random 100 < _missionChance)) then {[] spawn A3A_fnc_missionRequest};
 

@@ -200,7 +200,8 @@ A3A_fnc_planning_getSquadDetails = {
 	// Calculate money and HR costs natively to derive directly from Antistasi economy
 	private _money = 0;
 	private _hr = 0;
-	private _deployMultiplier = missionNamespace getVariable ["A3A_tweak_siegeDeploymentMultiplier", 1.25];
+	private _rawDeployMult = missionNamespace getVariable ["A3A_tweak_siegeDeploymentMultiplier", 125];
+	private _deployMultiplier = if (_rawDeployMult > 5) then { _rawDeployMult / 100 } else { _rawDeployMult };
 
 	// Helper to resolve unit cost safely from server variables with fallback
 	private _fnc_getUnitCost = {

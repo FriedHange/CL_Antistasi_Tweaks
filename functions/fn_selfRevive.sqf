@@ -7,7 +7,8 @@ if !(player getVariable ["incapacitated", false]) exitWith {};
 private _hintTitle = localize "STR_A3A_selfRevive_title";
 
 // Read kit requirement tweak
-private _noKitRequired = missionNamespace getVariable ["A3A_selfReviveTweak_NoKit", false];
+private _noKitVal = missionNamespace getVariable ["A3A_selfReviveTweak_NoKit", 0];
+private _noKitRequired = (_noKitVal isEqualTo 1) || {(_noKitVal isEqualType true) && {_noKitVal}};
 private _hasFAKs = [];
 
 if (!_noKitRequired) then {
