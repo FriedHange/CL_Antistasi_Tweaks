@@ -180,6 +180,23 @@ while {true} do {
 	if (_textArsenal != "") then {_textX = format [localize "STR_comms_mp_arsenal_updated", _textX, _textArsenal]};
 	[petros, "taxRep", _textX] remoteExec ["A3A_fnc_commsMP", [teamPlayer, civilian]];
 
+	[] call A3A_fnc_generateRebelGear;
+
+	[] call A3A_fnc_FIAradio;
+	[] call A3A_fnc_cleanConvoyMarker;
+
+	[] spawn A3A_fnc_promotePlayer;
+	[] call A3A_fnc_assignBossIfNone;
+
+	// Clear out plank objects that haven't been constructed and have exceeded the timeout
+	call A3A_fnc_processBuildingTimeouts;
+
+	// Decrease HQ knowledge values, old ones faster than current
+	if (A3A_curHQInfoOcc < 1) then { A3A_curHQInfoOcc = 0 max (A3A_curHQInfoOcc - 0.01) };
+	if (A3A_curHQInfoInv < 1) then { A3A_curHQInfoInv = 0 max (A3A_curHQInfoInv - 0.01) };
+	A3A_oldHQInfoOcc = A3A_oldHQInfoOcc select { _x set [2, _x#2 - 0.1]; _x#2 > 0 };			// arrays of [xpos, ypos, knowledge]
+	A3A_oldHQInfoInv = A3A_oldHQInfoInv select { _x set [2, _x#2 - 0.1]; _x#2 > 0 };
+
 	// Petros Random mission trigger chance (Applying customizable multiplier, capped at 50% max to avoid mission overload)
 	private _rawRandomMult = missionNamespace getVariable ["A3A_tweak_randomMissionChanceMultiplier", 100];
 	private _randomMult = if (_rawRandomMult > 5) then { _rawRandomMult / 100 } else { _rawRandomMult };
