@@ -2,7 +2,12 @@
     fn_missionRequest.sqf
     Wrapper for Antistasi Ultimate's missionRequest function to support manual cooldowns.
 */
-params ["_type", ["_requester", clientOwner], ["_silent", false]];
+params [["_type", "", [""]], ["_requester", clientOwner], ["_silent", false]];
+
+// If no type specified (e.g. called from resource check loop: [] spawn A3A_fnc_missionRequest), pass through to original
+if (_type isEqualTo "") exitWith {
+    _this call A3A_fnc_missionRequest_original;
+};
 
 private _cooldown = (missionNamespace getVariable ["A3A_tweak_missionCooldown", 0]) * 60; // Convert minutes to seconds
 private _canRequest = true;

@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project name="CL_Antistasi_Tweaks">
+    <Package name="CL_AIControl">
+        <Key ID="STR_control_unit_hint_header">
+            <Original>AI Direct Control</Original>
+            <English>AI Direct Control</English>
+        </Key>
+        <Key ID="STR_control_unit_error_no_unit">
+            <Original>No AI unit selected. Select a squad member with F2-F10 or look at them.</Original>
+            <English>No AI unit selected. Select a squad member with F2-F10 or look at them.</English>
+        </Key>
+        <Key ID="STR_control_unit_error_no_squad_selected">
+            <Original>No squad selected. Select a squad from High Command first.</Original>
+            <English>No squad selected. Select a squad from High Command first.</English>
+        </Key>
+        <Key ID="STR_control_unit_error_petros">
+            <Original>You cannot control Petros.</Original>
+            <English>You cannot control Petros.</English>
+        </Key>
+        <Key ID="STR_control_unit_error_undercover">
+            <Original>You cannot control AI while Undercover.</Original>
+            <English>You cannot control AI while Undercover.</English>
+        </Key>
+        <Key ID="STR_control_unit_error_no_squad_leader">
+            <Original>Only the Squad Leader can directly control squad members.</Original>
+            <English>Only the Squad Leader can directly control squad members.</English>
+        </Key>
+        <Key ID="STR_control_unit_error_no_player">
+            <Original>You cannot control other human players.</Original>
+            <English>You cannot control other human players.</English>
+        </Key>
+        <Key ID="STR_control_unit_error_alive_only">
+            <Original>You cannot control dead or incapacitated units.</Original>
+            <English>You cannot control dead or incapacitated units.</English>
+        </Key>
+        <Key ID="STR_control_unit_error_rebel_only">
+            <Original>You can only control friendly %1 units.</Original>
+            <English>You can only control friendly %1 units.</English>
+        </Key>
+        <Key ID="STR_control_unit_error_punish">
+            <Original>You cannot control AI units while serving punishment.</Original>
+            <English>You cannot control AI units while serving punishment.</English>
+        </Key>
+        <Key ID="STR_control_unit_error_ai_recursion">
+            <Original>You are already directly controlling an AI unit.</Original>
+            <English>You are already directly controlling an AI unit.</English>
+        </Key>
+        <Key ID="STR_control_unit_damage_control_return_player">
+            <Original>Your original body took damage! Control returned.</Original>
+            <English>Your original body took damage! Control returned.</English>
+        </Key>
+        <Key ID="STR_control_unit_damage_control_return_ai">
+            <Original>Controlled unit took damage! Control returned.</Original>
+            <English>Controlled unit took damage! Control returned.</English>
+        </Key>
+        <Key ID="STR_control_unit_time_to_return_to_original_body">
+            <Original>Time remaining in AI body: %1</Original>
+            <English>Time remaining in AI body: %1</English>
+        </Key>
+        <Key ID="STR_control_unit_return_to_original_body">
+            <Original>Control returned to original body.</Original>
+            <English>Control returned to original body.</English>
+        </Key>
+        <Key ID="STR_antistasi_actions_return_control_to_ai">
+            <Original>Release Control</Original>
+            <English>Release Control</English>
+        </Key>
+        <Key ID="STR_antistasi_actions_unconscious_action_possessed">
+            <Original>Direct Control Active</Original>
+            <English>Direct Control Active</English>
+        </Key>
+    </Package>
+</Project>

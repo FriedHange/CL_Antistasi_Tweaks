@@ -277,11 +277,13 @@ while { true } do {
 			// Scan all relevant enemy defenders across the entire configured AO
 			private _enemyUnits = allUnits select {
 				alive _x && {
-					(side _x == Occupants || side _x == Invaders) && {
+					(side (group _x) in [Occupants, Invaders] || side _x in [Occupants, Invaders]) && {
 						!captive _x && {
 							lifeState _x != "INCAPACITATED" && {
 								!(_x getVariable ["incapacitated", false]) && {
-									[_x, _marker] call A3A_fnc_planning_isInsideAO
+									!(_x getVariable ["ACE_isUnconscious", false]) && {
+										[_x, _marker] call A3A_fnc_planning_isInsideAO
+									}
 								}
 							}
 						}
@@ -307,37 +309,38 @@ while { true } do {
 
 			// Maintain aggressive assault momentum & extract infantry stuck on terrain/buildings
 			{
-				private _ldr = leader _x;
+				private _grp = _x;
+				private _ldr = leader _grp;
 				if (alive _ldr) then {
-					private _assignedDest = _x getVariable ["siege_clearingTarget", _targetPos];
-					private _lastPos = _x getVariable ["siege_lastPos", [0, 0, 0]];
-					private _stuckCount = _x getVariable ["siege_stuckCount", 0];
+					private _assignedDest = _grp getVariable ["siege_clearingTarget", _targetPos];
+					private _lastPos = _grp getVariable ["siege_lastPos", [0, 0, 0]];
+					private _stuckCount = _grp getVariable ["siege_stuckCount", 0];
 					private _curPos = getPosATL _ldr;
 
 					if (_curPos distance2D _lastPos < 2.5 && { _curPos distance2D _assignedDest > 20 }) then {
 						_stuckCount = _stuckCount + 1;
-						_x setVariable ["siege_stuckCount", _stuckCount];
+						_grp setVariable ["siege_stuckCount", _stuckCount];
 
 						if (_stuckCount >= 3) then { // Stuck for >= 15 seconds
-							diag_log format ["[A3A Planning] Un-sticking squad %1 stuck near %2 moving to %3", groupId _x, _curPos, _assignedDest];
-							_x setBehaviour "AWARE";
-							_x setSpeedMode "FULL";
-							_x setFormation "LINE";
+							diag_log format ["[A3A Planning] Un-sticking squad %1 stuck near %2 moving to %3", groupId _grp, _curPos, _assignedDest];
+							_grp setBehaviour "AWARE";
+							_grp setSpeedMode "FULL";
+							_grp setFormation "LINE";
 							{
 								if (alive _x && { vehicle _x == _x }) then {
 									_x setUnitPos "UP";
 									private _dest = _assignedDest vectorAdd [random 20 - 10, random 20 - 10, 0];
 									_x doMove _dest;
 								};
-							} forEach (units _x);
-							_x setVariable ["siege_stuckCount", 0];
+							} forEach (units _grp);
+							_grp setVariable ["siege_stuckCount", 0];
 						};
 					} else {
-						_x setVariable ["siege_lastPos", _curPos];
-						_x setVariable ["siege_stuckCount", 0];
+						_grp setVariable ["siege_lastPos", _curPos];
+						_grp setVariable ["siege_stuckCount", 0];
 						if ((behaviour _ldr) in ["COMBAT", "STEALTH"]) then {
-							_x setSpeedMode "FULL";
-							_x setFormation "LINE";
+							_grp setSpeedMode "FULL";
+							_grp setFormation "LINE";
 						};
 					};
 				};
@@ -437,7 +440,8 @@ while { true } do {
 								private _bestScore = -1e9;
 
 								{
-									_x params ["_cPos", "_cUnits", "_cHasVeh", "_cHasStatic", "_baseScore"];
+									private _cluster = _x;
+									_cluster params ["_cPos", "_cUnits", "_cHasVeh", "_cHasStatic", "_baseScore"];
 									private _dist = _ldrPos distance2D _cPos;
 
 									// Count other squads already clearing this cluster
@@ -457,7 +461,7 @@ while { true } do {
 									};
 									if (_effScore > _bestScore) then {
 										_bestScore = _effScore;
-										_bestCluster = _x;
+										_bestCluster = _cluster;
 									};
 								} forEach _clusters;
 

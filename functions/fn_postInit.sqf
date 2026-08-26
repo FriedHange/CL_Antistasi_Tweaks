@@ -11,6 +11,7 @@ A3A_fnc_isWithinMarkerArea = compile preprocessFileLineNumbers "\CL_Antistasi_Tw
 
 // Override AI direct control functions to support configurable time limit and damage threshold
 SCRT_fnc_ai_possessFriendlyUnit = compile preprocessFileLineNumbers "\CL_Antistasi_Tweaks\functions\fn_ai_possessFriendlyUnit.sqf";
+A3A_fnc_ai_possessFriendlyUnit = SCRT_fnc_ai_possessFriendlyUnit;
 A3A_fnc_controlunit = compile preprocessFileLineNumbers "\CL_Antistasi_Tweaks\functions\fn_controlunit.sqf";
 A3A_fnc_controlHCsquad = compile preprocessFileLineNumbers "\CL_Antistasi_Tweaks\functions\fn_controlHCsquad.sqf";
 
@@ -312,8 +313,9 @@ if (hasInterface) then {
                         if (time - _lastPress < 1.5) then {
                             _this call SCRT_fnc_common_unconsciousEventHandler_original;
                         } else {
+                            private _header = if (localize "STR_control_unit_hint_header" != "") then { localize "STR_control_unit_hint_header" } else { "Incapacitated" };
                             player setVariable ["CL_tweaks_lastUnconsciousRPress", time];
-                            [localize "STR_control_unit_hint_header", "Double-press R to Respawn"] call A3A_fnc_customHint;
+                            [_header, "Double-press R to Respawn"] call A3A_fnc_customHint;
                         };
                         true
                     } else {
@@ -352,8 +354,9 @@ if (hasInterface) then {
                         if (time - _lastPress < 1.5) then {
                             _this call A3A_fnc_unconsciousEventHandler_original;
                         } else {
+                            private _header = if (localize "STR_control_unit_hint_header" != "") then { localize "STR_control_unit_hint_header" } else { "Incapacitated" };
                             player setVariable ["CL_tweaks_lastUnconsciousRPress", time];
-                            [localize "STR_control_unit_hint_header", "Double-press R to Respawn"] call A3A_fnc_customHint;
+                            [_header, "Double-press R to Respawn"] call A3A_fnc_customHint;
                         };
                         true
                     } else {
