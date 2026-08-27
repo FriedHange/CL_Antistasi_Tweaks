@@ -47,12 +47,10 @@ if (isNil "A3A_planning_initDone") then {
 		    private _airports = missionNamespace getVariable ["airportsX", []];
 		    private _milbases = missionNamespace getVariable ["milbases", []];
 		    private _outposts = missionNamespace getVariable ["outposts", []];
-		    private _cities = missionNamespace getVariable ["citiesX", []];
 		    switch (true) do {
 			    case (_marker in _airports): { _maxMarkerDim max 750 };
 			    case (_marker in _milbases): { _maxMarkerDim max 450 };
 			    case (_marker in _outposts): { _maxMarkerDim max 350 };
-			    case (_marker in _cities): { _maxMarkerDim max 400 };
 			    default { _maxMarkerDim max 300 };
 		    }
 	    };
@@ -607,9 +605,21 @@ A3A_fnc_planning_onMapClick = {
 		A3A_planning_mapMode != ""
 	}) then {
 		if (A3A_planning_mapMode == "TARGET") then {
-			private _validTargets = outposts + airportsX + resourcesX + factories + seaports + milbases;
+			private _cities = missionNamespace getVariable ["citiesX", []];
+			if (_cities isNotEqualTo []) then {
+				private _nearestCity = [_cities, _pos] call BIS_fnc_nearestPosition;
+				if (_nearestCity != "" && { (getMarkerPos _nearestCity distance2D _pos) < 500 }) exitWith {
+					["Target Selection Failed", "Towns and cities cannot be targeted for military sieges. Win town support through logistics missions, controlling radio towers, and destroying hostile military administrations.", true] call A3A_fnc_planning_showNotification;
+				};
+			};
+
+			private _validTargets = (missionNamespace getVariable ["outposts", []]) + (missionNamespace getVariable ["airportsX", []]) + (missionNamespace getVariable ["resourcesX", []]) + (missionNamespace getVariable ["factories", []]) + (missionNamespace getVariable ["seaports", []]) + (missionNamespace getVariable ["milbases", []]);
+			if (_validTargets isEqualTo []) exitWith {
+				["Target Selection Failed", "No valid enemy military objectives found on map.", true] call A3A_fnc_planning_showNotification;
+			};
+
 			private _marker = [_validTargets, _pos] call BIS_fnc_nearestPosition;
-			if (getMarkerPos _marker distance2D _pos < 800) then {
+			if (_marker != "" && { getMarkerPos _marker distance2D _pos < 800 }) then {
 				private _side = sidesX getVariable [_marker, sideUnknown];
 				if (_side == Occupants || _side == Invaders) then {
 					A3A_planning_objective = _marker;
@@ -618,17 +628,17 @@ A3A_fnc_planning_onMapClick = {
 						_name = _marker;
 					};
 					["Target Selected", format ["Objective set to %1.", _name], false] call A3A_fnc_planning_showNotification;
-					                    A3A_planning_mapMode = ""; // Clear mode
+					A3A_planning_mapMode = ""; // Clear mode
 
-					                    // Remove stacked handler
+					// Remove stacked handler
 					["A3A_planning_mapClick", "onMapSingleClick"] call BIS_fnc_removeStackedEventHandler;
 
 					[_display] call A3A_fnc_planning_ui;
 				} else {
-					["Target Selection Failed", "You must select an enemy-controlled outpost, roadblock, or base.", true] call A3A_fnc_planning_showNotification;
+					["Target Selection Failed", "You must select an enemy-controlled outpost, military base, or resource site.", true] call A3A_fnc_planning_showNotification;
 				};
 			} else {
-				["Target Selection Failed", "No enemy objective close to click location.", true] call A3A_fnc_planning_showNotification;
+				["Target Selection Failed", "No enemy military objective close to click location.", true] call A3A_fnc_planning_showNotification;
 			};
 		};
 

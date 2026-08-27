@@ -57,6 +57,13 @@ while {true} do {
 	if (isNil "factories") then { factories = []; };
 	if (isNil "seaports") then { seaports = []; };
 	if (isNil "destroyedSites") then { destroyedSites = []; };
+	if (isNil "citiesX") then { citiesX = []; };
+	if (isNil "controlsX") then { controlsX = []; };
+	if (isNil "resourcesX") then { resourcesX = []; };
+	if (isNil "airportsX") then { airportsX = []; };
+	if (isNil "milAdministrationsX") then { milAdministrationsX = []; };
+	if (isNil "A3A_milAdministrations") then { A3A_milAdministrations = []; };
+	if (isNil "antennasDead") then { antennasDead = []; };
 
 	_resAdd = 25;
 	_hrAdd = 0;
@@ -71,19 +78,27 @@ while {true} do {
 		private _cityData = server getVariable [_city, [0,0,0,0]];
 		_cityData params [["_numCiv",0], ["_numVeh",0], ["_supportGov",0], ["_supportReb",0]];
 
-		private _radioTowerSide = [_city] call A3A_fnc_getSideRadioTowerInfluence;
-		switch (_radioTowerSide) do
-		{
-			case teamPlayer: {[-1,_suppBoost,_city,false,true] spawn A3A_fnc_citySupportChange};
-			case Occupants: {[1,-1,_city,false,true] spawn A3A_fnc_citySupportChange};
-			case Invaders: {[-1,-1,_city,false,true] spawn A3A_fnc_citySupportChange};
+		private _radioTowerSide = if (!isNil "A3A_fnc_getSideRadioTowerInfluence") then {
+			[_city] call A3A_fnc_getSideRadioTowerInfluence
+		} else {
+			sideUnknown
+		};
+
+		if (!isNil "A3A_fnc_citySupportChange") then {
+			switch (_radioTowerSide) do
+			{
+				case teamPlayer: {[-1,_suppBoost,_city,false,true] spawn A3A_fnc_citySupportChange};
+				case Occupants: {[1,-1,_city,false,true] spawn A3A_fnc_citySupportChange};
+				case Invaders: {[-1,-1,_city,false,true] spawn A3A_fnc_citySupportChange};
+			};
 		};
 
 		_resAddCity = (_numCiv * (_supportReb / 100)) / 3;
 		if (!finite _resAddCity) then { _resAddCity = 0; };
 		_hrAddCity = _numCiv * (_supportReb / 10000);
 
-		if (sidesX getVariable [_city,sideUnknown] == Occupants) then
+		private _curCitySide = sidesX getVariable [_city, sideUnknown];
+		if (_curCitySide == Occupants) then
 		{
 			_resAddCity = _resAddCity / 2;
 			_hrAddCity = _hrAddCity / 2;
@@ -93,31 +108,44 @@ while {true} do {
 		_resAdd = _resAdd + _resAddCity;
 		_hrAdd = _hrAdd + _hrAddCity;
 
-		if (_supportGov < _supportReb && {sidesX getVariable [_city,sideUnknown] == Occupants}) then {
-			["TaskSucceeded", ["", format [localize "STR_notifiers_city_joined",_city,(A3A_faction_reb get "name")]]] remoteExec ["BIS_fnc_showNotification",teamPlayer];
-			sidesX setVariable [_city,teamPlayer,true];
-			[Occupants, 10, 60] remoteExec ["A3A_fnc_addAggression",2];
-			garrison setVariable [_city,[],true];
-			[_city] call A3A_fnc_mrkUpdate;
+		// Town joins Rebels when Rebel Support exceeds Government Support
+		if (_supportGov < _supportReb && { _curCitySide != teamPlayer }) then {
+			private _rebName = if (!isNil "A3A_faction_reb" && { "name" in A3A_faction_reb }) then { A3A_faction_reb get "name" } else { "Rebels" };
+			["TaskSucceeded", ["", format [localize "STR_notifiers_city_joined", _city, _rebName]]] remoteExec ["BIS_fnc_showNotification", teamPlayer];
+			sidesX setVariable [_city, teamPlayer, true];
 
-			private _closestAdminMarker = [milAdministrationsX, _city] call BIS_fnc_nearestPosition;
-			if (_closestAdminMarker isEqualType "" && {(getMarkerPos _closestAdminMarker) distance2D (getMarkerPos _city) < 800}) then {
-				private _milAdministration = [A3A_milAdministrations, _closestAdminMarker] call BIS_fnc_nearestPosition;
-				[_milAdministration, "SILENT"] call SCRT_fnc_location_removeMilAdmin;
+			private _aggSide = if (_curCitySide == Invaders) then { Invaders } else { Occupants };
+			[_aggSide, 10, 60] remoteExec ["A3A_fnc_addAggression", 2];
+			garrison setVariable [_city, [], true];
+			if (!isNil "A3A_fnc_mrkUpdate") then { [_city] call A3A_fnc_mrkUpdate; };
+
+			if (!isNil "milAdministrationsX" && { milAdministrationsX isNotEqualTo [] }) then {
+				private _closestAdminMarker = [milAdministrationsX, _city] call BIS_fnc_nearestPosition;
+				if (_closestAdminMarker isEqualType "" && { _closestAdminMarker != "" } && { (getMarkerPos _closestAdminMarker) distance2D (getMarkerPos _city) < 800 }) then {
+					if (!isNil "A3A_milAdministrations" && { A3A_milAdministrations isNotEqualTo [] } && { !isNil "SCRT_fnc_location_removeMilAdmin" }) then {
+						private _milAdministration = [A3A_milAdministrations, _closestAdminMarker] call BIS_fnc_nearestPosition;
+						if (!isNil "_milAdministration" && { !isNull _milAdministration }) then {
+							[_milAdministration, "SILENT"] call SCRT_fnc_location_removeMilAdmin;
+						};
+					};
+				};
 			};
 
-			sleep 5;
-			{_nul = [_city,_x] spawn A3A_fnc_deleteControls} forEach controlsX;
-			[] call A3A_fnc_tierCheck;
+			if (!isNil "controlsX" && { !isNil "A3A_fnc_deleteControls" }) then {
+				{ [_city, _x] spawn A3A_fnc_deleteControls } forEach controlsX;
+			};
+			if (!isNil "A3A_fnc_tierCheck") then { [] call A3A_fnc_tierCheck; };
 		};
-		if (_supportGov > _supportReb && {sidesX getVariable [_city,sideUnknown] == teamPlayer}) then {
-			["TaskFailed", ["", format [localize "STR_notifiers_city_joined",_city,(A3A_faction_occ get "name")]]] remoteExec ["BIS_fnc_showNotification",teamPlayer];
-			sidesX setVariable [_city,Occupants,true];
-			[Occupants, -10, 45] remoteExec ["A3A_fnc_addAggression",2];
-			garrison setVariable [_city,[],true];
-			[_city] call A3A_fnc_mrkUpdate;
-			sleep 5;
-			[] call A3A_fnc_tierCheck;
+
+		// Town leaves Rebels when Government Support exceeds Rebel Support
+		if (_supportGov > _supportReb && { _curCitySide == teamPlayer }) then {
+			private _occName = if (!isNil "A3A_faction_occ" && { "name" in A3A_faction_occ }) then { A3A_faction_occ get "name" } else { "Occupants" };
+			["TaskFailed", ["", format [localize "STR_notifiers_city_joined", _city, _occName]]] remoteExec ["BIS_fnc_showNotification", teamPlayer];
+			sidesX setVariable [_city, Occupants, true];
+			[Occupants, -10, 45] remoteExec ["A3A_fnc_addAggression", 2];
+			garrison setVariable [_city, [], true];
+			if (!isNil "A3A_fnc_mrkUpdate") then { [_city] call A3A_fnc_mrkUpdate; };
+			if (!isNil "A3A_fnc_tierCheck") then { [] call A3A_fnc_tierCheck; };
 		};
 	} forEach citiesX;
 

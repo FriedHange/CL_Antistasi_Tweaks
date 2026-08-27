@@ -111,7 +111,6 @@ private _fnc_postCapture = {
 			[_allRecoveredVehicles] call A3A_fnc_planning_serverAddGarage;
 		};
 
-		private _cities = missionNamespace getVariable ["citiesX", []];
 		private _markerDispName = markerText ("Dum" + _marker);
 		if (_markerDispName == "") then { _markerDispName = markerText _marker; };
 		if (_markerDispName == "" && !isNil "A3A_fnc_localizar") then { _markerDispName = [_marker] call A3A_fnc_localizar; };
@@ -119,35 +118,9 @@ private _fnc_postCapture = {
 
 		// --- apply garrison (with Antistasi capacity capping & overflow refund) ---
 		if (_captureAction == 1 && { _totalGarrisonedCount > 0 }) then {
-			if (_marker in _cities) then {
-				// Cities cannot have military garrisons in Antistasi. Refund troops instead.
-				private _cityRefundMoney = 0;
-				private _cityRefundHR = 0;
-				{
-					_cityRefundMoney = _cityRefundMoney + (_x select 1);
-					_cityRefundHR = _cityRefundHR + (_x select 2);
-				} forEach _garrisonList;
-
-				_cityRefundMoney = round _cityRefundMoney;
-				_cityRefundHR = round _cityRefundHR;
-
-				if (_cityRefundMoney > 0 || _cityRefundHR > 0) then {
-					[_cityRefundHR, _cityRefundMoney] remoteExec ["A3A_fnc_resourcesFIA", 2];
-					diag_log format ["[A3A Planning] Refunded %1 siege troops (%2 HR, %3 €) for town %4 (towns cannot be garrisoned).", count _garrisonList, _cityRefundHR, _cityRefundMoney, _marker];
-				};
-
-				private _msg = format ["%1 secured! Refunded %2 € and %3 HR for surviving siege troops (towns cannot be garrisoned).", _markerDispName, _cityRefundMoney, _cityRefundHR];
-				if (count _allRecoveredVehicles > 0) then {
-					_msg = _msg + format [" Recovered %1 vehicles to HQ Garage.", count _allRecoveredVehicles];
-				};
-				[
-					"Siege Garrison",
-					_msg
-				] remoteExec ["A3A_fnc_customHint", 0];
+			private _maxCapacity = if (!isNil "A3A_fnc_garrisonLimit") then {
+				[_marker] call A3A_fnc_garrisonLimit
 			} else {
-				private _maxCapacity = if (!isNil "A3A_fnc_garrisonLimit") then {
-					[_marker] call A3A_fnc_garrisonLimit
-				} else {
 					private _airports = missionNamespace getVariable ["airportsX", []];
 					private _milbases = missionNamespace getVariable ["milbases", []];
 					private _outposts = missionNamespace getVariable ["outposts", []];
@@ -586,21 +559,7 @@ while { true } do {
 							};
 						} forEach _aliveGroups;
 
-						private _cities = missionNamespace getVariable ["citiesX", []];
-						if (_marker in _cities) then {
-							sidesX setVariable [_marker, teamPlayer, true];
-							private _cityData = server getVariable [_marker, [0, 0, 0, 0]];
-							_cityData set [2, 0];
-							_cityData set [3, 100];
-							server setVariable [_marker, _cityData, true];
-							[Occupants, 10, 60] remoteExec ["A3A_fnc_addAggression", 2];
-							garrison setVariable [_marker, [], true];
-							if (!isNil "A3A_fnc_mrkUpdate") then { [_marker] call A3A_fnc_mrkUpdate; };
-							["TaskSucceeded", ["", format [localize "STR_notifiers_city_joined", _marker, (A3A_faction_reb get "name")]]] remoteExec ["BIS_fnc_showNotification", teamPlayer];
-							if (!isNil "A3A_fnc_tierCheck") then { [] call A3A_fnc_tierCheck; };
-						} else {
-							[teamPlayer, _marker] spawn A3A_fnc_markerChange;
-						};
+						[teamPlayer, _marker] spawn A3A_fnc_markerChange;
 						[true] remoteExec ["A3A_fnc_planning_localCleanupMarkers", 0];
 
 						[_marker, _fnc_postCapture] spawn {
