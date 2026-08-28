@@ -47,15 +47,6 @@ class A3A {
             texts[] = {"Disabled", "Enabled"};
             default = 1;
         };
-        /*
-        class A3A_tweak_builderDistance : ExtenderParams {
-            title = "Interaction Distance";
-            tooltip = "Max distance (in meters) from which engineers can build or cancel unbuilt blueprint boxes. Applies to newly placed boxes.";
-            values[] = {8, 10, 12, 16, 20, 25, 30};
-            texts[] = {"8m (Default)", "10m", "12m", "16m", "20m", "25m", "30m"};
-            default = 8;
-        };
-        */
         class A3A_tweak_builderChainRadius : ExtenderParams {
             title = "Chain Build Radius";
             tooltip = "When you manually finish building one object, other unbuilt objects within this radius are also completed automatically. 0 = Disabled. Only applies with manual construction.";

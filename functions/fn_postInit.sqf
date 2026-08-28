@@ -115,35 +115,43 @@ A3A_fnc_planning_localSideChat = {
 };
 
 A3A_fnc_planning_localSetCurrentWaypoint = {
-	params ["_group", "_wpIndex"];
+	params [["_group", grpNull, [grpNull]], ["_wpIndex", 0, [0]]];
+	if (isNull _group) exitWith {};
 	_group setCurrentWaypoint [_group, _wpIndex];
 };
 
 A3A_fnc_planning_localMoveInGunner = {
-	params ["_unit", "_vehicle"];
+	params [["_unit", objNull, [objNull]], ["_vehicle", objNull, [objNull]]];
+	if (isNull _unit || { isNull _vehicle }) exitWith {};
 	_unit assignAsGunner _vehicle;
 	_unit moveInGunner _vehicle;
 };
 
 A3A_fnc_planning_localDoWatch = {
-	params ["_unit", "_pos"];
+	params [["_unit", objNull, [objNull]], ["_pos", [0, 0, 0], [[]]]];
+	if (isNull _unit) exitWith {};
 	_unit doWatch _pos;
 };
 
 A3A_fnc_planning_localArtilleryFire = {
-	params ["_vehicle", "_pos", "_mag", "_count"];
+	params [["_vehicle", objNull, [objNull]], ["_pos", [0, 0, 0], [[]]], ["_mag", "", [""]], ["_count", 1, [0]]];
+	if (isNull _vehicle || { _mag == "" }) exitWith {};
 	_vehicle commandArtilleryFire [_pos, _mag, _count];
 };
 
 A3A_fnc_planning_localGetOut = {
-	params ["_unit", "_vehicle"];
+	params [["_unit", objNull, [objNull]], ["_vehicle", objNull, [objNull]]];
+	if (isNull _unit) exitWith {};
 	unassignVehicle _unit;
 	[_unit] orderGetIn false;
-	_unit action ["GetOut", _vehicle];
+	if (!isNull _vehicle) then {
+		_unit action ["GetOut", _vehicle];
+	};
 };
 
 A3A_fnc_planning_localDoMove = {
-	params ["_unit", "_pos"];
+	params [["_unit", objNull, [objNull]], ["_pos", [0, 0, 0], [[]]]];
+	if (isNull _unit) exitWith {};
 	_unit doMove _pos;
 };
 // Initialize planning variables and loops
@@ -264,8 +272,10 @@ if (isServer) then {
 					private _isRevealed = markerAlpha _dumMarker > 0;
 
 					if (_x in _revealedMarkers) then {
+						// If Antistasi's markerChange hid the marker when AI took it over (because hideEnemyMarkers is true),
+						// restore its visibility immediately because the player has already discovered this location!
 						if (!_isRevealed) then {
-							_revealedMarkers = _revealedMarkers - [_x];
+							_dumMarker setMarkerAlpha 1;
 						};
 					} else {
 						if (_isRevealed) then {

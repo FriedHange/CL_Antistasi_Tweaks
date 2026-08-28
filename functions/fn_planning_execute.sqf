@@ -556,15 +556,24 @@ if (_mode in ["DEPLOY", "REINFORCE"]) then {
 				_group setCombatMode "YELLOW";
 				_group setSpeedMode "NORMAL";
 			} else {
-				// All combat ground vehicles (GarageCrew, VehicleSquad, BuildAA) & infantry advance with SAD waypoints
-				private _wp = _group addWaypoint [_targetPos, 0];
-				_wp setWaypointType "SAD";
-				_wp setWaypointBehaviour "COMBAT";
-				_wp setWaypointCombatMode "RED";
-				_wp setWaypointSpeed "FULL";
-				_group setBehaviour "COMBAT";
-				_group setCombatMode "RED";
-				_group setSpeedMode "FULL";
+				if (_roleTag == "VEHICLE") then {
+					// Ground combat vehicles start in AWARE/NORMAL; vehicleOverwatch coordinates tactical infantry-support positioning
+					private _wp = _group addWaypoint [_spawnPos, 0];
+					_wp setWaypointType "HOLD";
+					_group setBehaviour "AWARE";
+					_group setCombatMode "RED";
+					_group setSpeedMode "NORMAL";
+				} else {
+					// Assault infantry squads advance directly with SAD waypoints
+					private _wp = _group addWaypoint [_targetPos, 0];
+					_wp setWaypointType "SAD";
+					_wp setWaypointBehaviour "COMBAT";
+					_wp setWaypointCombatMode "RED";
+					_wp setWaypointSpeed "FULL";
+					_group setBehaviour "COMBAT";
+					_group setCombatMode "RED";
+					_group setSpeedMode "FULL";
+				};
 			};
 		};
 
@@ -573,8 +582,8 @@ if (_mode in ["DEPLOY", "REINFORCE"]) then {
 		        // bad indexing, etc.) can NEVER roll back or skip the waypoint/behavior
 		        // already committed in Stage 2 above. ---
 		try {
-			// MG and Mortar weapon bag override system (only for fallback squads)
-			if (_special in ["MG_FALLBACK", "Mortar_FALLBACK"]) then {
+			// MG and Mortar weapon bag assignment & tracking system
+			if (_special in ["MG", "MG_FALLBACK", "Mortar", "Mortar_FALLBACK"]) then {
 				[_group, _special] spawn {
 					params ["_group", "_special"];
 					private _units = [];
@@ -620,18 +629,32 @@ if (_mode in ["DEPLOY", "REINFORCE"]) then {
 					private _unit1 = _units # 0;
 					private _unit2 = _units # 1;
 
-					removeBackpackGlobal _unit1;
-					removeBackpackGlobal _unit2;
+					private _wBag = if (_special in ["MG", "MG_FALLBACK"]) then { _mgWeaponBag } else { _mortarWeaponBag };
+					private _sBag = if (_special in ["MG", "MG_FALLBACK"]) then { _mgSupportBag } else { _mortarSupportBag };
 
-					if (_special == "MG_FALLBACK") then {
-						_unit1 addBackpackGlobal _mgWeaponBag;
-						_unit2 addBackpackGlobal _mgSupportBag;
+					if (_special in ["MG_FALLBACK", "Mortar_FALLBACK"]) then {
+						removeBackpackGlobal _unit1;
+						removeBackpackGlobal _unit2;
+						_unit1 addBackpackGlobal _wBag;
+						_unit2 addBackpackGlobal _sBag;
+					} else {
+						// For faction squads, use their existing backpacks if equipped, otherwise supply faction bags
+						if (backpack _unit1 != "") then {
+							_wBag = backpack _unit1;
+						} else {
+							_unit1 addBackpackGlobal _wBag;
+						};
+						if (backpack _unit2 != "") then {
+							_sBag = backpack _unit2;
+						} else {
+							_unit2 addBackpackGlobal _sBag;
+						};
 					};
-					if (_special == "Mortar_FALLBACK") then {
-						_unit1 addBackpackGlobal _mortarWeaponBag;
-						_unit2 addBackpackGlobal _mortarSupportBag;
-					};
-					diag_log format ["[A3A Ultimate Tweaks Extender] Equipped group %1 with %2 deployment bags.", groupId _group, _special];
+
+					_group setVariable ["siege_weaponBag", _wBag, true];
+					_group setVariable ["siege_supportBag", _sBag, true];
+
+					diag_log format ["[A3A Ultimate Tweaks Extender] Equipped & registered group %1 with %2 deployment bags (%3 / %4).", groupId _group, _special, _wBag, _sBag];
 				};
 			};
 
@@ -810,9 +833,9 @@ if (_mode in ["DEPLOY", "REINFORCE"]) then {
 				_travelTime = (_travelTime max 5) min 300; // Bound between 5s and 5 minutes
 			};
 
-			            // spawn a thread to track travel simulation
-			[_unitTypes, _idFormat, _special, _vehType, _entryPos, _targetPos, _travelTime, _displayName, _entryName, _spawnSquadDirect, _distance, _costMoney, _costHR, _spawnPos, _addHC, _clientOwnerID] spawn {
-				params ["_unitTypes", "_idFormat", "_special", "_vehType", "_entryPos", "_targetPos", "_travelTime", "_displayName", "_entryName", "_spawnSquadDirect", "_distance", "_costMoney", "_costHR", "_spawnPos", "_addHC", "_clientOwnerID"];
+			// spawn a thread to track travel simulation
+			[_unitTypes, _idFormat, _special, _vehType, _entryPos, _targetPos, _travelTime, _displayName, _entryName, _spawnSquadDirect, _distance, _costMoney, _costHR, _spawnPos, _addHC, _clientOwnerID, _hqPos] spawn {
+				params ["_unitTypes", "_idFormat", "_special", "_vehType", "_entryPos", "_targetPos", "_travelTime", "_displayName", "_entryName", "_spawnSquadDirect", "_distance", "_costMoney", "_costHR", "_spawnPos", "_addHC", "_clientOwnerID", "_hqPos"];
 
 				private _travelMarker = "";
 				if (_travelTime > 0) then {

@@ -128,24 +128,30 @@ A3A_planning_cachedVehicles set ["AA", _aa];
 A3A_planning_cachedVehicles set ["APC", _apc];
 A3A_planning_cachedVehicles set ["TANK", _tank];
 
-// Pre-build available squad listbox options
+// Pre-build available squad listbox options gated by War Level
 private _menuItems = [
     ["Infantry Squad", "0"],
     ["Infantry Team", "1"],
-    ["AT Team", "2"],
-    ["AA Team", "13"],
-    ["Sniper Team", "3"],
-    ["MG Team", "4"],
-    ["Mortar Team", "5"]
+    ["Sniper Team", "3"]
 ];
 
-if (_tier >= 1) then {
-    if (_lightArmed != "") then { _menuItems pushBack ["Armed Technical (MG)", "6"]; };
-    if (_at != "") then { _menuItems pushBack ["AT Technical (SPG/AT)", "7"]; };
+if (_tier >= 2) then {
+    _menuItems pushBack ["MG Team", "4"];
 };
 
 if (_tier >= 3) then {
+    _menuItems pushBack ["AT Team", "2"];
+    if (_lightArmed != "") then { _menuItems pushBack ["Armed Technical (MG)", "6"]; };
+};
+
+if (_tier >= 4) then {
+    _menuItems pushBack ["AA Team", "13"];
+    if (_at != "") then { _menuItems pushBack ["AT Technical (SPG/AT)", "7"]; };
     if (_aa != "") then { _menuItems pushBack ["Anti-Air Vehicle", "9"]; };
+};
+
+if (_tier >= 5) then {
+    _menuItems pushBack ["Mortar Team", "5"];
 };
 
 if (_tier >= 6) then {

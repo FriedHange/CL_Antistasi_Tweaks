@@ -30,11 +30,6 @@ if (isNil "A3A_planning_initDone") then {
 			    A3A_planning_objective = "";
 			    false
 		    };
-		    private _side = sidesX getVariable [A3A_planning_objective, sideUnknown];
-		    if (_side == teamPlayer) exitWith {
-			    A3A_planning_assaultStarted = false;
-			    false
-		    };
 		    true
 	    };
 
