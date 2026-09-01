@@ -65,11 +65,11 @@ class A3A {
             default = 0;
         };
         class A3A_selfReviveTweak_NoKit : ExtenderParams {
-            title = "FAK Requirement";
-            tooltip = "Requires a First Aid Kit (or rebel healing item) to perform self-revive, or disables the check entirely.";
-            values[] = {0, 1};
-            texts[] = {"Requires First Aid Kit", "No Kit Required"};
-            default = 0;
+            title = "Self-Revive Override";
+            tooltip = "Disables this addon's self-revive override, or enables it with or without a First Aid Kit requirement. Use Disabled with another revive mod.";
+            values[] = {-1, 0, 1};
+            texts[] = {"Disabled", "Requires First Aid Kit", "No Kit Required"};
+            default = -1;
         };
         class A3A_selfReviveTweak_Cooldown : ExtenderParams {
             title = "Cooldown (Seconds)";

@@ -6,6 +6,7 @@
 diag_log "[A3A Ultimate Tweaks Extender] Initializing overrides...";
 
 // Override self-revive and marker area functions
+A3A_fnc_selfRevive_original = A3A_fnc_selfRevive;
 A3A_fnc_selfRevive = compile preprocessFileLineNumbers "\CL_Antistasi_Tweaks\functions\fn_selfRevive.sqf";
 A3A_fnc_isWithinMarkerArea = compile preprocessFileLineNumbers "\CL_Antistasi_Tweaks\functions\fn_isWithinMarkerArea.sqf";
 
@@ -167,7 +168,7 @@ if (isServer) then {
 		diag_log format ["[A3A Ultimate Tweaks Extender] Synced parameter: %1 = %2", _paramName, _val];
 	} forEach [
 		["A3A_tweak_autoBuild", 1],
-		["A3A_selfReviveTweak_NoKit", 0],
+		["A3A_selfReviveTweak_NoKit", -1],
 		["A3A_selfReviveTweak_Cooldown", 300],
 		["A3A_selfReviveTweak_Damage", 50],
 		["A3A_tweak_saveRadiusHQ", 50],
@@ -212,28 +213,104 @@ if (isServer) then {
 		};
 	};
 
-	// Client-side loop to reveal hidden enemy zones when player gets near
+	A3A_tweak_fnc_revealMarker = {
+		params ["_marker", ["_zone", ""]];
+		if (!isServer || { _marker == "" }) exitWith {};
+
+		if (isNil "A3A_tweak_discoveredMarkers") then {
+			A3A_tweak_discoveredMarkers = [];
+		};
+		A3A_tweak_discoveredMarkers pushBackUnique _marker;
+		publicVariable "A3A_tweak_discoveredMarkers";
+
+		if (_zone != "") then {
+			if (isNil "revealedZones") then { revealedZones = [] };
+			revealedZones pushBackUnique _zone;
+			publicVariable "revealedZones";
+		};
+		_marker setMarkerAlpha 1;
+	};
+
+	// Client-side loop to enforce fog of war and reveal enemy zones when approached.
 	if (hasInterface) then {
 		[] spawn {
 			scriptName "A3A_Ultimate_Tweaks_MarkerRevealLoop";
 			waitUntil {
-				!isNil "markersX" && {
+				sleep 0.5;
+				!isNil "A3A_startupState" && {
+					A3A_startupState == "completed"
+				} && {
+					!isNil "markersX"
+				} && {
 					!isNil "hideEnemyMarkers"
+				} && {
+					!isNil "sidesX"
 				}
 			};
-			if !(hideEnemyMarkers) exitWith {};
+			if !(hideEnemyMarkers isEqualTo 1 || { hideEnemyMarkers isEqualTo true }) exitWith {};
+			// A3A_startupState is published before Ultimate's final marker pass completes.
+			sleep 1;
 
 			// Queue system variables
 			A3A_tweak_discoveryQueue = [];
 			A3A_tweak_discoveryRunning = false;
+			private _revealedMarkers = (missionNamespace getVariable ["revealedZones", []]) apply { "Dum" + _x };
+			_revealedMarkers append (missionNamespace getVariable ["A3A_tweak_discoveredMarkers", []]);
 
-			private _revealedMarkers = [];
+			private _fnc_getDiscoveryTargets = {
+				private _targets = [];
+				private _cities = missionNamespace getVariable ["citiesX", []];
+
+				{
+					private _zone = _x;
+					private _visualMarker = "Dum" + _zone;
+					if !(_visualMarker in allMapMarkers) then { continue };
+
+					private _markerSide = sidesX getVariable [_zone, sideUnknown];
+					if (_markerSide isEqualTo teamPlayer || { _zone in _cities }) then {
+						_visualMarker setMarkerAlphaLocal 1;
+					} else {
+						if (_markerSide isNotEqualTo sideUnknown) then {
+							_targets pushBack [_visualMarker, _zone, getMarkerPos _zone];
+						};
+					};
+				} forEach markersX;
+
+				{
+					if (_x in allMapMarkers) then {
+						_targets pushBack [_x, "", getMarkerPos _x];
+					};
+				} forEach (missionNamespace getVariable ["mrkAntennas", []]);
+
+				{
+					private _fuelMarker = format ["Ant%1", mapGridPosition _x];
+					if (_fuelMarker in allMapMarkers) then {
+						_targets pushBackUnique [_fuelMarker, "", getMarkerPos _fuelMarker];
+					};
+				} forEach (missionNamespace getVariable ["A3A_fuelStations", []]);
+
+				{
+					private _markerSide = sidesX getVariable [_x, sideUnknown];
+					if (_markerSide isEqualTo teamPlayer) then {
+						_x setMarkerAlphaLocal 1;
+					} else {
+						_targets pushBack [_x, "", getMarkerPos _x];
+					};
+				} forEach (missionNamespace getVariable ["milAdministrationsX", []]);
+
+				_targets
+			};
+
+			private _hiddenCount = 0;
+
 			{
-				private _dumMarker = "Dum" + _x;
-				if (markerAlpha _dumMarker > 0) then {
-					_revealedMarkers pushBack _x;
+				_x params ["_visualMarker"];
+				if !(_visualMarker in _revealedMarkers) then {
+					_visualMarker setMarkerAlphaLocal 0;
+					_hiddenCount = _hiddenCount + 1;
 				};
-			} forEach markersX;
+			} forEach (call _fnc_getDiscoveryTargets);
+			diag_log format ["[A3A Ultimate Tweaks Extender] Fog of War initialized after campaign load. Hidden %1 map markers; retained %2 discoveries.", _hiddenCount, count _revealedMarkers];
 
 			private _fnc_processQueue = {
 				if (A3A_tweak_discoveryRunning) exitWith {};
@@ -255,11 +332,8 @@ if (isServer) then {
 
 			while { true } do {
 				sleep 5;
-				// Check if feature is enabled via lobby parameters
+				// Marker hiding remains active even when automatic proximity reveals are disabled.
 				private _enabled = missionNamespace getVariable ["A3A_tweak_discoveryReveal", 1];
-				if (_enabled isEqualTo 0) then {
-					continue
-				};
 
 				if (!alive player) then {
 					continue
@@ -267,31 +341,25 @@ if (isServer) then {
 				private _playerPos = getPos player;
 				private _revealDist = missionNamespace getVariable ["A3A_tweak_discoveryDistance", 200];
 
-				{
-					private _dumMarker = "Dum" + _x;
-					private _isRevealed = markerAlpha _dumMarker > 0;
+				_revealedMarkers append ((missionNamespace getVariable ["revealedZones", []]) apply { "Dum" + _x });
+				_revealedMarkers append (missionNamespace getVariable ["A3A_tweak_discoveredMarkers", []]);
 
-					if (_x in _revealedMarkers) then {
-						// If Antistasi's markerChange hid the marker when AI took it over (because hideEnemyMarkers is true),
-						// restore its visibility immediately because the player has already discovered this location!
-						if (!_isRevealed) then {
-							_dumMarker setMarkerAlpha 1;
-						};
-					} else {
-						if (_isRevealed) then {
-							// Already revealed globally (by another player or loaded from save), track it quietly
-							_revealedMarkers pushBack _x;
-						} else {
-							private _markerPos = getMarkerPos _x;
-							if (_playerPos distance2D _markerPos < _revealDist) then {
-								_dumMarker setMarkerAlpha 1;
-								_revealedMarkers pushBack _x;
-								A3A_tweak_discoveryQueue pushBack (markerText _dumMarker);
-								[] call _fnc_processQueue;
-							};
-						};
+				{
+					_x params ["_visualMarker", "_zone", "_markerPos"];
+					if (_visualMarker in _revealedMarkers) then {
+						_visualMarker setMarkerAlphaLocal 1;
+						continue
 					};
-				} forEach markersX;
+
+					_visualMarker setMarkerAlphaLocal 0;
+					if (_enabled isNotEqualTo 0 && { _playerPos distance2D _markerPos < _revealDist }) then {
+						_visualMarker setMarkerAlphaLocal 1;
+						_revealedMarkers pushBackUnique _visualMarker;
+						[_visualMarker, _zone] remoteExecCall ["A3A_tweak_fnc_revealMarker", 2];
+						A3A_tweak_discoveryQueue pushBack (markerText _visualMarker);
+						[] call _fnc_processQueue;
+					};
+				} forEach (call _fnc_getDiscoveryTargets);
 			};
 		};
 	};

@@ -2,13 +2,13 @@
     Overridden A3A_fnc_selfRevive
     Allows reviving without FAK, customized cooldown, and custom post-heal damage.
 */
+private _mode = missionNamespace getVariable ["A3A_selfReviveTweak_NoKit", -1];
+if (_mode isEqualTo -1) exitWith { [] call A3A_fnc_selfRevive_original };
 if !(player getVariable ["incapacitated", false]) exitWith {};
 
 private _hintTitle = localize "STR_A3A_selfRevive_title";
 
-// Read kit requirement tweak
-private _noKitVal = missionNamespace getVariable ["A3A_selfReviveTweak_NoKit", 0];
-private _noKitRequired = (_noKitVal isEqualTo 1) || {(_noKitVal isEqualType true) && {_noKitVal}};
+private _noKitRequired = (_mode isEqualTo 1) || { (_mode isEqualType true) && { _mode } };
 private _hasFAKs = [];
 
 if (!_noKitRequired) then {
