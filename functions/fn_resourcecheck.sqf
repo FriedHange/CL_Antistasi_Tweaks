@@ -75,8 +75,59 @@ while {true} do {
 		private _city = _x;
 		private _resAddCity = 0;
 		private _hrAddCity = 0;
-		private _cityData = server getVariable [_city, [0,0,0,0]];
-		_cityData params [["_numCiv",0], ["_numVeh",0], ["_supportGov",0], ["_supportReb",0]];
+		// --- Antistasi v12.0.3+ Town Data Migration ---
+		// Fetch town data from A3A_townData HashMap with safety fallback to legacy server variables
+		private _numCiv = 0;
+		private _numVeh = 0;
+		private _supportGov = 0;
+		private _supportReb = 0;
+		private _curCitySide = sideUnknown;
+
+		private _cityData = if (!isNil "A3A_townData" && { _city in A3A_townData }) then {
+			A3A_townData get _city
+		} else {
+			server getVariable [_city, [0, 0, 0, 0]]
+		};
+
+		if (!isNil "_cityData") then {
+			if (_cityData isEqualType createHashMap) then {
+				// Modern Antistasi v12.0.3+ HashMap format
+				_numCiv = _cityData getOrDefault ["pop", _cityData getOrDefault ["population", _cityData getOrDefault ["numCiv", 0]]];
+				_numVeh = _cityData getOrDefault ["numVeh", _cityData getOrDefault ["vehicles", 0]];
+
+				// Extract support metrics (array [gov, reb] or explicit keys)
+				private _support = _cityData getOrDefault ["support", [0, 0]];
+				if (_support isEqualType []) then {
+					_supportGov = _support param [0, 0];
+					_supportReb = _support param [1, 0];
+				} else if (_support isEqualType 0) then {
+					_supportReb = _support;
+				};
+
+				if (_supportGov isEqualTo 0 && { "supportGov" in _cityData }) then {
+					_supportGov = _cityData getOrDefault ["supportGov", 0];
+				};
+				if (_supportReb isEqualTo 0 && { "supportReb" in _cityData }) then {
+					_supportReb = _cityData getOrDefault ["supportReb", 0];
+				};
+
+				_curCitySide = _cityData getOrDefault ["side", sidesX getVariable [_city, sideUnknown]];
+			} else {
+				if (_cityData isEqualType []) then {
+					// Legacy array format fallback: [numCiv, numVeh, supportGov, supportReb]
+					_cityData params [["_pCiv", 0], ["_pVeh", 0], ["_pGov", 0], ["_pReb", 0]];
+					_numCiv = _pCiv;
+					_numVeh = _pVeh;
+					_supportGov = _pGov;
+					_supportReb = _pReb;
+					_curCitySide = sidesX getVariable [_city, sideUnknown];
+				};
+			};
+		};
+
+		if (_curCitySide isEqualTo sideUnknown) then {
+			_curCitySide = sidesX getVariable [_city, sideUnknown];
+		};
 
 		private _radioTowerSide = if (!isNil "A3A_fnc_getSideRadioTowerInfluence") then {
 			[_city] call A3A_fnc_getSideRadioTowerInfluence
@@ -97,7 +148,6 @@ while {true} do {
 		if (!finite _resAddCity) then { _resAddCity = 0; };
 		_hrAddCity = _numCiv * (_supportReb / 10000);
 
-		private _curCitySide = sidesX getVariable [_city, sideUnknown];
 		if (_curCitySide == Occupants) then
 		{
 			_resAddCity = _resAddCity / 2;
@@ -113,6 +163,9 @@ while {true} do {
 			private _rebName = if (!isNil "A3A_faction_reb" && { "name" in A3A_faction_reb }) then { A3A_faction_reb get "name" } else { "Rebels" };
 			["TaskSucceeded", ["", format [localize "STR_notifiers_city_joined", _city, _rebName]]] remoteExec ["BIS_fnc_showNotification", teamPlayer];
 			sidesX setVariable [_city, teamPlayer, true];
+			if (!isNil "A3A_townData" && { _city in A3A_townData } && { (A3A_townData get _city) isEqualType createHashMap }) then {
+				(A3A_townData get _city) set ["side", teamPlayer];
+			};
 
 			private _aggSide = if (_curCitySide == Invaders) then { Invaders } else { Occupants };
 			[_aggSide, 10, 60] remoteExec ["A3A_fnc_addAggression", 2];
@@ -142,6 +195,9 @@ while {true} do {
 			private _occName = if (!isNil "A3A_faction_occ" && { "name" in A3A_faction_occ }) then { A3A_faction_occ get "name" } else { "Occupants" };
 			["TaskFailed", ["", format [localize "STR_notifiers_city_joined", _city, _occName]]] remoteExec ["BIS_fnc_showNotification", teamPlayer];
 			sidesX setVariable [_city, Occupants, true];
+			if (!isNil "A3A_townData" && { _city in A3A_townData } && { (A3A_townData get _city) isEqualType createHashMap }) then {
+				(A3A_townData get _city) set ["side", Occupants];
+			};
 			[Occupants, -10, 45] remoteExec ["A3A_fnc_addAggression", 2];
 			garrison setVariable [_city, [], true];
 			if (!isNil "A3A_fnc_mrkUpdate") then { [_city] call A3A_fnc_mrkUpdate; };

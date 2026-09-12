@@ -148,6 +148,9 @@ if (_owner != player) exitWith {
     [_hintTitle, ["STR_control_unit_error_ai_recursion", "You are already directly controlling an AI unit."] call _fnc_loc] call A3A_fnc_customHint;
 };
 
+private _origGroup = group player;
+private _unitOrigGroup = group _unit;
+
 {
     if (_x != vehicle _x) then {
         [_x] orderGetIn true;
@@ -160,55 +163,97 @@ private _speaker = speaker _unit;
 _unit setVariable ["owner", player, true];
 _unit setVariable ["A3A_player", player];
 player setVariable ["originalBody", player];
+player setVariable ["CL_controlledAI", _unit];
 
 // HandleDamage EH on the original player body
 private _eh1 = player addEventHandler ["HandleDamage", {
-    params ["_unit", "_selection", "_damage"];
-    private _threshold = missionNamespace getVariable ["A3A_tweak_aiControlDamageThreshold", 0];
+    params ["_body", "_selection", "_damage"];
 
-    // Vanilla mode (_threshold == 0): real damage returns control
-    if (_threshold == 0 && {_damage > 0.05}) then {
-        _unit removeEventHandler ["HandleDamage", _thisEventHandler];
-        _unit setVariable ["controlReturned", true, true];
-        private _hintHeader = if (localize "STR_control_unit_hint_header" != "") then { localize "STR_control_unit_hint_header" } else { "AI Direct Control" };
-        private _hintMsg = if (localize "STR_control_unit_damage_control_return_player" != "") then { localize "STR_control_unit_damage_control_return_player" } else { "Your original body took damage! Control returned." };
-        [_hintHeader, _hintMsg] call A3A_fnc_customHint;
-    };
-    // Custom threshold mode (e.g. 0 < _threshold < 90)
-    if (_threshold > 0 && {_threshold < 90} && {_selection == "" && {_damage >= _threshold}}) then {
-        _unit removeEventHandler ["HandleDamage", _thisEventHandler];
-        _unit setVariable ["controlReturned", true, true];
+    // Any real damage to the player's main body must IMMEDIATELY return control to the main body,
+    // so the player can react and so that if the damage is fatal, the player dies as 'player'
+    // and enters the normal respawn sequence instead of becoming stuck in an inert corpse!
+    if (_damage > 0.05) then {
+        _body removeEventHandler ["HandleDamage", _thisEventHandler];
+        private _controlled = _body getVariable ["CL_controlledAI", objNull];
+        if (!isNull _controlled) then {
+            _controlled setVariable ["controlReturned", true, true];
+            _controlled removeEventHandler ["HandleDamage", _controlled getVariable ["CL_aiControl_eh2", -1]];
+            _controlled setVariable ["owner", nil, true];
+            _controlled setVariable ["A3A_player", nil, true];
+        };
+        _body setVariable ["controlReturned", true, true];
+
+        _body allowDamage true;
+        if (!isNull _controlled) then {
+            _controlled allowDamage true;
+        };
+
+        // Synchronously return player to main body before damage is applied
+        if (alive _body && {player != _body}) then {
+            selectPlayer _body;
+        };
+
         private _hintHeader = if (localize "STR_control_unit_hint_header" != "") then { localize "STR_control_unit_hint_header" } else { "AI Direct Control" };
         private _hintMsg = if (localize "STR_control_unit_damage_control_return_player" != "") then { localize "STR_control_unit_damage_control_return_player" } else { "Your original body took damage! Control returned." };
         [_hintHeader, _hintMsg] call A3A_fnc_customHint;
     };
     _damage
 }];
+player setVariable ["CL_aiControl_eh1", _eh1];
 
 // HandleDamage EH on the possessed AI unit
 private _eh2 = _unit addEventHandler ["HandleDamage", {
-    params ["_unit", "_selection", "_damage"];
+    params ["_aiUnit", "_selection", "_damage"];
     private _threshold = missionNamespace getVariable ["A3A_tweak_aiControlDamageThreshold", 0];
+    private _origOwner = _aiUnit getVariable ["owner", objNull];
 
-    // Vanilla mode (_threshold == 0): real damage returns control
-    if (_threshold == 0 && {_damage > 0.05}) then {
-        _unit removeEventHandler ["HandleDamage", _thisEventHandler];
-        _unit setVariable ["controlReturned", true, true];
-        private _hintHeader = if (localize "STR_control_unit_hint_header" != "") then { localize "STR_control_unit_hint_header" } else { "AI Direct Control" };
-        private _hintMsg = if (localize "STR_control_unit_damage_control_return_ai" != "") then { localize "STR_control_unit_damage_control_return_ai" } else { "Controlled unit took damage! Control returned." };
-        [_hintHeader, _hintMsg] call A3A_fnc_customHint;
+    private _shouldReturn = false;
+    if (_threshold == 0) then {
+        // Vanilla mode: any real hit returns control immediately
+        if (_damage > 0.05) then { _shouldReturn = true; };
+    } else {
+        // Incapacitated / Dead only mode (threshold == 99):
+        // Allow combat damage without revoking control, BUT if the hit would be lethal or incapacitating,
+        // synchronously return control to _origOwner before _aiUnit dies, so the player is never trapped in a corpse!
+        if (_damage >= 0.85 || { (damage _aiUnit + _damage) >= 0.9 || { _aiUnit getVariable ["incapacitated", false] } }) then {
+            _shouldReturn = true;
+        };
     };
-    // Custom threshold mode (e.g. 0 < _threshold < 90)
-    if (_threshold > 0 && {_threshold < 90} && {_selection == "" && {_damage >= _threshold}}) then {
-        _unit removeEventHandler ["HandleDamage", _thisEventHandler];
-        _unit setVariable ["controlReturned", true, true];
+
+    if (_shouldReturn) then {
+        _aiUnit removeEventHandler ["HandleDamage", _thisEventHandler];
+        _aiUnit setVariable ["controlReturned", true, true];
+        _aiUnit setVariable ["owner", nil, true];
+        _aiUnit setVariable ["A3A_player", nil, true];
+
+        if (!isNull _origOwner) then {
+            _origOwner removeEventHandler ["HandleDamage", _origOwner getVariable ["CL_aiControl_eh1", -1]];
+            _origOwner setVariable ["controlReturned", true, true];
+        };
+
+        _aiUnit allowDamage true;
+        if (!isNull _origOwner) then {
+            _origOwner allowDamage true;
+        };
+
+        // Synchronously return player to main body before fatal damage is applied to the AI
+        if (!isNull _origOwner && {alive _origOwner && {player != _origOwner}}) then {
+            selectPlayer _origOwner;
+        };
+
         private _hintHeader = if (localize "STR_control_unit_hint_header" != "") then { localize "STR_control_unit_hint_header" } else { "AI Direct Control" };
-        private _hintMsg = if (localize "STR_control_unit_damage_control_return_ai" != "") then { localize "STR_control_unit_damage_control_return_ai" } else { "Controlled unit took damage! Control returned." };
+        private _hintMsg = if (_threshold == 0) then {
+            if (localize "STR_control_unit_damage_control_return_ai" != "") then { localize "STR_control_unit_damage_control_return_ai" } else { "Controlled unit took damage! Control returned." };
+        } else {
+            "Controlled unit was incapacitated/killed! Control returned to your body."
+        };
         [_hintHeader, _hintMsg] call A3A_fnc_customHint;
     };
     _damage
 }];
+_unit setVariable ["CL_aiControl_eh2", _eh2];
 
+_unit allowDamage true;
 selectPlayer _unit;
 [_unit, createHashMapFromArray [["face", _face], ["speaker", _speaker]]] call A3A_fnc_setIdentity;
 
@@ -245,6 +290,8 @@ private _timerFmt = ["STR_control_unit_time_to_return_to_original_body", "Time r
 
 waitUntil {
     sleep 1;
+    if (!isDamageAllowed _unit) then { _unit allowDamage true; };
+    if (!isDamageAllowed _owner) then { _owner allowDamage true; };
     private _displayTime = if (_timeX > 9999) then { "∞" } else { str _timeX };
     [_hintTitle, format [_timerFmt, _displayTime]] call A3A_fnc_customHint;
     _timeX = _timeX - 1;
@@ -266,26 +313,60 @@ waitUntil {
 
 _unit removeAction _returnActionId;
 
-selectPlayer _owner;
-(units group player) joinsilent group player;
-group player selectLeader player;
-
-if (!isNil "respawnMenu") then {
-    (findDisplay 46) displayRemoveEventHandler ["KeyDown", respawnMenu];
-    respawnMenu = nil;
+if (alive _owner && {player != _owner}) then {
+    selectPlayer _owner;
 };
 
-_unit setVariable ["controlReturned", nil];
-_unit setVariable ["owner", nil];
-_unit setVariable ["A3A_player", nil];
+// Safely preserve squad hierarchy without breaking groups if incapacitated
+if (alive _owner) then {
+    if (group _owner != _origGroup) then {
+        [_owner] joinSilent _origGroup;
+    };
+    if !(_owner getVariable ["incapacitated", false]) then {
+        _origGroup selectLeader _owner;
+    };
+};
+
+if (!isNull _unit && {alive _unit}) then {
+    _unit allowDamage true;
+    if (group _unit != _unitOrigGroup) then {
+        [_unit] joinSilent _unitOrigGroup;
+    };
+};
+
+if (alive _owner) then {
+    _owner allowDamage true;
+};
+
+// Preserve unconscious menu if the player is currently incapacitated
+if (alive player && {player getVariable ["incapacitated", false]}) then {
+    if (isNil "respawnMenu") then {
+        respawnMenu = (findDisplay 46) displayAddEventHandler ["KeyDown", SCRT_fnc_common_unconsciousEventHandler];
+    };
+} else {
+    if (!isNil "respawnMenu") then {
+        (findDisplay 46) displayRemoveEventHandler ["KeyDown", respawnMenu];
+        respawnMenu = nil;
+    };
+};
+
+_unit setVariable ["controlReturned", nil, true];
+_unit setVariable ["owner", nil, true];
+_unit setVariable ["A3A_player", nil, true];
 _unit setVariable ["CL_aiControl_accumDmg", nil];
+_unit setVariable ["CL_aiControl_eh2", nil];
 _unit removeEventHandler ["HandleDamage", _eh2];
 
-player setVariable ["controlReturned", nil];
-player setVariable ["originalBody", nil];
-player setVariable ["CL_aiControl_accumDmg", nil];
-player removeEventHandler ["HandleDamage", _eh1];
+_owner setVariable ["controlReturned", nil, true];
+_owner setVariable ["originalBody", nil, true];
+_owner setVariable ["CL_controlledAI", nil, true];
+_owner setVariable ["CL_aiControl_accumDmg", nil];
+_owner setVariable ["CL_aiControl_eh1", nil];
+_owner setVariable ["A3A_blockRevive", nil, true];
+_owner removeEventHandler ["HandleDamage", _eh1];
 
-[_hintTitle, ["STR_control_unit_return_to_original_body", "Control returned to original body."] call _fnc_loc] call A3A_fnc_customHint;
-playSound "A3AP_UiSuccess";
+if (alive _owner && {!(_owner getVariable ["incapacitated", false])}) then {
+    [_hintTitle, ["STR_control_unit_return_to_original_body", "Control returned to original body."] call _fnc_loc] call A3A_fnc_customHint;
+    playSound "A3AP_UiSuccess";
+};
 

@@ -10,11 +10,19 @@ A3A_fnc_selfRevive_original = A3A_fnc_selfRevive;
 A3A_fnc_selfRevive = compile preprocessFileLineNumbers "\CL_Antistasi_Tweaks\functions\fn_selfRevive.sqf";
 A3A_fnc_isWithinMarkerArea = compile preprocessFileLineNumbers "\CL_Antistasi_Tweaks\functions\fn_isWithinMarkerArea.sqf";
 
+// Override unconscious handler and loop for custom keys and dynamic UI prompts
+SCRT_fnc_common_unconsciousEventHandler = compile preprocessFileLineNumbers "\CL_Antistasi_Tweaks\functions\fn_common_unconsciousEventHandler.sqf";
+A3A_fnc_unconscious = compile preprocessFileLineNumbers "\CL_Antistasi_Tweaks\functions\fn_unconscious.sqf";
+
 // Override AI direct control functions to support configurable time limit and damage threshold
 SCRT_fnc_ai_possessFriendlyUnit = compile preprocessFileLineNumbers "\CL_Antistasi_Tweaks\functions\fn_ai_possessFriendlyUnit.sqf";
 A3A_fnc_ai_possessFriendlyUnit = SCRT_fnc_ai_possessFriendlyUnit;
 A3A_fnc_controlunit = compile preprocessFileLineNumbers "\CL_Antistasi_Tweaks\functions\fn_controlunit.sqf";
 A3A_fnc_controlHCsquad = compile preprocessFileLineNumbers "\CL_Antistasi_Tweaks\functions\fn_controlHCsquad.sqf";
+
+// Override onPlayerRespawn with safety wrapper
+A3A_fnc_onPlayerRespawn_original = A3A_fnc_onPlayerRespawn;
+A3A_fnc_onPlayerRespawn = compile preprocessFileLineNumbers "\CL_Antistasi_Tweaks\functions\fn_onPlayerRespawn.sqf";
 
 // Helper function to stop controlling AI unit and return to player body immediately
 A3A_fnc_returnControl = {
@@ -185,9 +193,11 @@ if (isServer) then {
 		["A3A_tweak_siegeDeploymentMultiplier", 125],
 		["A3A_tweak_aiControlTimeOverride", 120],
 		["A3A_tweak_aiControlDamageThreshold", 0],
-		["A3A_tweak_unconsciousRespawnKey", 19],
 		["A3A_tweak_remoteHQMenu", 2],
-		["A3A_tweak_minSpawnDistance", 0]
+		["A3A_tweak_minSpawnDistance", 0],
+		["A3A_tweak_unconsciousRespawnAction", 0],
+		["A3A_tweak_unconsciousPossessAction", 0],
+		["A3A_tweak_unconsciousWithstandAction", 0]
 	];
 	private _overrideTime = missionNamespace getVariable ["A3A_tweak_aiControlTimeOverride", 120];
 	private _globalTime = if (_overrideTime == -1) then { 999999 } else { _overrideTime };
@@ -221,12 +231,16 @@ if (isServer) then {
 			A3A_tweak_discoveredMarkers = [];
 		};
 		A3A_tweak_discoveredMarkers pushBackUnique _marker;
+		if (_zone != "") then {
+			A3A_tweak_discoveredMarkers pushBackUnique ("Dum" + _zone);
+		};
 		publicVariable "A3A_tweak_discoveredMarkers";
 
 		if (_zone != "") then {
 			if (isNil "revealedZones") then { revealedZones = [] };
 			revealedZones pushBackUnique _zone;
 			publicVariable "revealedZones";
+			("Dum" + _zone) setMarkerAlpha 1;
 		};
 		_marker setMarkerAlpha 1;
 	};
@@ -255,7 +269,53 @@ if (isServer) then {
 			A3A_tweak_discoveryQueue = [];
 			A3A_tweak_discoveryRunning = false;
 			private _revealedMarkers = (missionNamespace getVariable ["revealedZones", []]) apply { "Dum" + _x };
+			_revealedMarkers append (missionNamespace getVariable ["revealedZones", []]);
 			_revealedMarkers append (missionNamespace getVariable ["A3A_tweak_discoveredMarkers", []]);
+
+			private _fnc_getLocationDisplayName = {
+				params ["_visualMarker", "_zone", "_markerPos"];
+				private _cities = missionNamespace getVariable ["citiesX", []];
+				private _nearCity = if (_cities isNotEqualTo []) then {
+					[_cities, _markerPos] call BIS_fnc_nearestPosition
+				} else { "" };
+
+				private _name = "";
+
+				if (_zone != "") then {
+					_name = [_zone] call A3A_fnc_localizar;
+					if (_name isEqualTo "") then {
+						private _type = call {
+							if (_zone in (missionNamespace getVariable ["airportsX", []])) exitWith { "AIRBASE" };
+							if (_zone in (missionNamespace getVariable ["milbases", []])) exitWith { "MILITARY BASE" };
+							if (_zone in (missionNamespace getVariable ["outposts", []])) exitWith { "OUTPOST" };
+							if (_zone in (missionNamespace getVariable ["resourcesX", []])) exitWith { "RESOURCE" };
+							if (_zone in (missionNamespace getVariable ["factories", []])) exitWith { "FACTORY" };
+							if (_zone in (missionNamespace getVariable ["seaports", []])) exitWith { "SEAPORT" };
+							if (_zone in (missionNamespace getVariable ["controlsX", []])) exitWith { "ROADBLOCK" };
+							if (_zone in (missionNamespace getVariable ["milAdministrationsX", []])) exitWith { "MILITARY ADMINISTRATION" };
+							"BASE"
+						};
+						_name = if (_nearCity != "") then { format ["%1: %2", _type, _nearCity] } else { _type };
+					};
+				} else {
+					if ((_visualMarker find "Ant") == 0 && {_visualMarker in allMapMarkers && {markerType _visualMarker == "loc_Fuelstation"}}) then {
+						_name = if (_nearCity != "") then { format ["GAS STATION: %1", _nearCity] } else { "GAS STATION" };
+					} else {
+						if ((_visualMarker find "antenna") != -1 || {markerType _visualMarker == "loc_Transmitter"}) then {
+							_name = if (_nearCity != "") then { format ["RADIO TOWER: %1", _nearCity] } else { "RADIO TOWER" };
+						} else {
+							private _mText = markerText _visualMarker;
+							if (_mText != "") then {
+								_name = if (_nearCity != "") then { format ["%1: %2", _mText, _nearCity] } else { _mText };
+							} else {
+								_name = if (_nearCity != "") then { format ["LOCATION: %1", _nearCity] } else { "UNKNOWN LOCATION" };
+							};
+						};
+					};
+				};
+
+				toUpper _name
+			};
 
 			private _fnc_getDiscoveryTargets = {
 				private _targets = [];
@@ -263,29 +323,31 @@ if (isServer) then {
 
 				{
 					private _zone = _x;
-					private _visualMarker = "Dum" + _zone;
+					private _visualMarker = if (("Dum" + _zone) in allMapMarkers) then { "Dum" + _zone } else { _zone };
 					if !(_visualMarker in allMapMarkers) then { continue };
 
 					private _markerSide = sidesX getVariable [_zone, sideUnknown];
 					if (_markerSide isEqualTo teamPlayer || { _zone in _cities }) then {
 						_visualMarker setMarkerAlphaLocal 1;
 					} else {
-						if (_markerSide isNotEqualTo sideUnknown) then {
-							_targets pushBack [_visualMarker, _zone, getMarkerPos _zone];
-						};
+						private _size = markerSize _zone;
+						private _radius = (_size select 0) max (_size select 1);
+						private _pos = getMarkerPos _zone;
+						if (_pos isEqualTo [0, 0, 0]) then { _pos = getMarkerPos _visualMarker; };
+						_targets pushBack [_visualMarker, _zone, _pos, _radius];
 					};
-				} forEach markersX;
+				} forEach (missionNamespace getVariable ["markersX", []]);
 
 				{
 					if (_x in allMapMarkers) then {
-						_targets pushBack [_x, "", getMarkerPos _x];
+						_targets pushBack [_x, "", getMarkerPos _x, 0];
 					};
 				} forEach (missionNamespace getVariable ["mrkAntennas", []]);
 
 				{
 					private _fuelMarker = format ["Ant%1", mapGridPosition _x];
 					if (_fuelMarker in allMapMarkers) then {
-						_targets pushBackUnique [_fuelMarker, "", getMarkerPos _fuelMarker];
+						_targets pushBackUnique [_fuelMarker, "", getMarkerPos _fuelMarker, 0];
 					};
 				} forEach (missionNamespace getVariable ["A3A_fuelStations", []]);
 
@@ -294,7 +356,7 @@ if (isServer) then {
 					if (_markerSide isEqualTo teamPlayer) then {
 						_x setMarkerAlphaLocal 1;
 					} else {
-						_targets pushBack [_x, "", getMarkerPos _x];
+						_targets pushBack [_x, "", getMarkerPos _x, 0];
 					};
 				} forEach (missionNamespace getVariable ["milAdministrationsX", []]);
 
@@ -318,20 +380,22 @@ if (isServer) then {
 				[] spawn {
 					while { count A3A_tweak_discoveryQueue > 0 } do {
 						private _placeName = A3A_tweak_discoveryQueue deleteAt 0;
-						private _msg = format [
-							"<t size='1.3' color='#84B062' font='PuristaBold' align='center'>LOCATION DISCOVERED</t><br/><t size='1.7' color='#E3DCBE' font='PuristaMedium' align='center'>%1</t>",
-							_placeName
-						];
-						// Display text at center-top of screen (y = 0.23), duration 2s, fade-in/out 0.2s
-						[_msg, -1, -0.30, 5, 0.2, 0, 9700] spawn BIS_fnc_dynamicText;
-						sleep 5.45; // 0.2s fade-in + 5s duration + 0.2s fade-out + 0.05s buffer
+						if (_placeName != "") then {
+							private _msg = format [
+								"<t size='1.3' color='#84B062' font='PuristaBold' align='center'>LOCATION DISCOVERED</t><br/><t size='1.7' color='#E3DCBE' font='PuristaMedium' align='center'>%1</t>",
+								_placeName
+							];
+							// Display text at center-top of screen (y = -0.30), duration 4s, fade-in/out 0.2s
+							[_msg, -1, -0.30, 4, 0.2, 0, 9700] spawn BIS_fnc_dynamicText;
+							sleep 4.45; // 0.2s fade-in + 4s duration + 0.2s fade-out + 0.05s buffer
+						};
 					};
 					A3A_tweak_discoveryRunning = false;
 				};
 			};
 
 			while { true } do {
-				sleep 5;
+				sleep 3;
 				// Marker hiding remains active even when automatic proximity reveals are disabled.
 				private _enabled = missionNamespace getVariable ["A3A_tweak_discoveryReveal", 1];
 
@@ -342,22 +406,44 @@ if (isServer) then {
 				private _revealDist = missionNamespace getVariable ["A3A_tweak_discoveryDistance", 200];
 
 				_revealedMarkers append ((missionNamespace getVariable ["revealedZones", []]) apply { "Dum" + _x });
+				_revealedMarkers append (missionNamespace getVariable ["revealedZones", []]);
 				_revealedMarkers append (missionNamespace getVariable ["A3A_tweak_discoveredMarkers", []]);
 
 				{
-					_x params ["_visualMarker", "_zone", "_markerPos"];
-					if (_visualMarker in _revealedMarkers) then {
+					_x params ["_visualMarker", "_zone", "_markerPos", ["_radius", 0]];
+					if (_visualMarker in _revealedMarkers || { _zone != "" && { _zone in (missionNamespace getVariable ["revealedZones", []]) } }) then {
 						_visualMarker setMarkerAlphaLocal 1;
 						continue
 					};
 
 					_visualMarker setMarkerAlphaLocal 0;
-					if (_enabled isNotEqualTo 0 && { _playerPos distance2D _markerPos < _revealDist }) then {
+
+					private _inZone = if (_zone != "" && {_zone in allMapMarkers}) then { _playerPos inArea _zone } else { false };
+					private _nearZone = (_playerPos distance2D _markerPos) < (_revealDist + _radius);
+
+					if (_enabled isNotEqualTo 0 && { _inZone || _nearZone }) then {
 						_visualMarker setMarkerAlphaLocal 1;
 						_revealedMarkers pushBackUnique _visualMarker;
+						if (_zone != "") then {
+							_revealedMarkers pushBackUnique _zone;
+							_revealedMarkers pushBackUnique ("Dum" + _zone);
+						};
 						[_visualMarker, _zone] remoteExecCall ["A3A_tweak_fnc_revealMarker", 2];
-						A3A_tweak_discoveryQueue pushBack (markerText _visualMarker);
-						[] call _fnc_processQueue;
+
+						// Update map marker text on gas stations with nearest town name for quick map reference
+						if ((_visualMarker find "Ant") == 0 && {_visualMarker in allMapMarkers && {markerType _visualMarker == "loc_Fuelstation"}}) then {
+							private _cities = missionNamespace getVariable ["citiesX", []];
+							private _nearCity = if (_cities isNotEqualTo []) then { [_cities, _markerPos] call BIS_fnc_nearestPosition } else { "" };
+							if (_nearCity != "") then {
+								_visualMarker setMarkerTextLocal (format ["%1 (%2)", localize "STR_fuelstation", _nearCity]);
+							};
+						};
+
+						private _locName = [_visualMarker, _zone, _markerPos] call _fnc_getLocationDisplayName;
+						if (_locName != "") then {
+							A3A_tweak_discoveryQueue pushBack _locName;
+							[] call _fnc_processQueue;
+						};
 					};
 				} forEach (call _fnc_getDiscoveryTargets);
 			};
@@ -367,97 +453,3 @@ if (isServer) then {
 	// Overrides applied
 	diag_log "[A3A Ultimate Tweaks Extender] Overrides applied.";
 
-// =====================================================
-// WRAP UNCONSCIOUS KEY EVENT HANDLERS
-// =====================================================
-if (hasInterface) then {
-    [] spawn {
-        // Wait for mission initialization to complete so functions are defined
-        waitUntil {
-            sleep 1;
-            !isNil "SCRT_fnc_common_unconsciousEventHandler" || { !isNil "A3A_fnc_unconsciousEventHandler" || { time > 15 } }
-        };
-
-        if (!isNil "SCRT_fnc_common_unconsciousEventHandler") then {
-            diag_log "[A3A Ultimate Tweaks Extender] Wrapping SCRT_fnc_common_unconsciousEventHandler...";
-            SCRT_fnc_common_unconsciousEventHandler_original = SCRT_fnc_common_unconsciousEventHandler;
-            SCRT_fnc_common_unconsciousEventHandler = {
-                params ["_display", "_key", "_shift", "_ctrl", "_alt"];
-                private _targetKey = missionNamespace getVariable ["A3A_tweak_unconsciousRespawnKey", 19];
-                
-                if (_targetKey == 0) exitWith {
-                    if (_key == 19) then {
-                        private _lastPress = player getVariable ["CL_tweaks_lastUnconsciousRPress", 0];
-                        if (time - _lastPress < 1.5) then {
-                            _this call SCRT_fnc_common_unconsciousEventHandler_original;
-                        } else {
-                            private _header = if (localize "STR_control_unit_hint_header" != "") then { localize "STR_control_unit_hint_header" } else { "Incapacitated" };
-                            player setVariable ["CL_tweaks_lastUnconsciousRPress", time];
-                            [_header, "Double-press R to Respawn"] call A3A_fnc_customHint;
-                        };
-                        true
-                    } else {
-                        _this call SCRT_fnc_common_unconsciousEventHandler_original;
-                    };
-                };
-
-                if (_targetKey != 19) then {
-                    if (_key == _targetKey) then {
-                        private _remappedParams = [_display, 19, _shift, _ctrl, _alt];
-                        _remappedParams call SCRT_fnc_common_unconsciousEventHandler_original;
-                        true
-                    } else {
-                        if (_key == 19) then {
-                            true
-                        } else {
-                            _this call SCRT_fnc_common_unconsciousEventHandler_original;
-                        };
-                    };
-                } else {
-                    _this call SCRT_fnc_common_unconsciousEventHandler_original;
-                };
-            };
-        };
-
-        if (!isNil "A3A_fnc_unconsciousEventHandler") then {
-            diag_log "[A3A Ultimate Tweaks Extender] Wrapping A3A_fnc_unconsciousEventHandler...";
-            A3A_fnc_unconsciousEventHandler_original = A3A_fnc_unconsciousEventHandler;
-            A3A_fnc_unconsciousEventHandler = {
-                params ["_display", "_key", "_shift", "_ctrl", "_alt"];
-                private _targetKey = missionNamespace getVariable ["A3A_tweak_unconsciousRespawnKey", 19];
-                
-                if (_targetKey == 0) exitWith {
-                    if (_key == 19) then {
-                        private _lastPress = player getVariable ["CL_tweaks_lastUnconsciousRPress", 0];
-                        if (time - _lastPress < 1.5) then {
-                            _this call A3A_fnc_unconsciousEventHandler_original;
-                        } else {
-                            private _header = if (localize "STR_control_unit_hint_header" != "") then { localize "STR_control_unit_hint_header" } else { "Incapacitated" };
-                            player setVariable ["CL_tweaks_lastUnconsciousRPress", time];
-                            [_header, "Double-press R to Respawn"] call A3A_fnc_customHint;
-                        };
-                        true
-                    } else {
-                        _this call A3A_fnc_unconsciousEventHandler_original;
-                    };
-                };
-
-                if (_targetKey != 19) then {
-                    if (_key == _targetKey) then {
-                        private _remappedParams = [_display, 19, _shift, _ctrl, _alt];
-                        _remappedParams call A3A_fnc_unconsciousEventHandler_original;
-                        true
-                    } else {
-                        if (_key == 19) then {
-                            true
-                        } else {
-                            _this call A3A_fnc_unconsciousEventHandler_original;
-                        };
-                    };
-                } else {
-                    _this call A3A_fnc_unconsciousEventHandler_original;
-                };
-            };
-        };
-    };
-};

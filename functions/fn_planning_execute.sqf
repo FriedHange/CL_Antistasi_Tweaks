@@ -285,6 +285,46 @@ if (_mode in ["DEPLOY", "REINFORCE"]) then {
 		private _group = grpNull;
 		private _vehicle = objNull;
 
+		// Helper to equip and initialize a rebel unit with its assigned faction loadout
+		private _fnc_equipAndInitUnit = {
+			params ["_unit", "_unitRole"];
+			if (isNull _unit) exitWith {};
+
+			// Resolve loadout via Antistasi loadout system
+			private _loadout = nil;
+			if (!isNil "_unitRole" && { _unitRole != "" }) then {
+				if (!isNil "A3A_fnc_getLoadout") then {
+					_loadout = [_unitRole] call A3A_fnc_getLoadout;
+				};
+				if (isNil "_loadout") then {
+					_loadout = _unitRole;
+				};
+			};
+
+			// Apply loadout to unit
+			if (!isNil "A3A_fnc_setLoadout" && { !isNil "_loadout" }) then {
+				try {
+					[_unit, _loadout] call A3A_fnc_setLoadout;
+				} catch {
+					diag_log format ["[A3A Planning Exception] setLoadout failed for %1 with %2: %3", _unit, _unitRole, _exception];
+				};
+			};
+
+			// Persist unitType role
+			if (!isNil "_unitRole" && { _unitRole != "" }) then {
+				_unit setVariable ["unitType", _unitRole, true];
+			};
+
+			// Initialize rebel unit AI, skills, and event handlers
+			try {
+				if (!isNil "A3A_fnc_FIAinit") then {
+					[_unit, false, _unitRole] call A3A_fnc_FIAinit;
+				};
+			} catch {
+				diag_log format ["[A3A Planning Exception] FIAinit failed for unit %1: %2", _unit, _exception];
+			};
+		};
+
 		// --- STAGE 1: Vehicle creation for non-GarageCrew squads.
 		// GarageCrew manages its own vehicle lifecycle in the block below.
 		if (_special != "GarageCrew" && { _vehType != "" } && {
@@ -378,22 +418,27 @@ if (_mode in ["DEPLOY", "REINFORCE"]) then {
 				if (!isNull _vehicle) then {
 					_group = createGroup teamPlayer;
 
-					// Resolve friendly rebel crew class
-					private _crewUnitType = missionNamespace getVariable ["staticCrewReb", ""];
-					if (_crewUnitType == "" || { !isClass (configFile >> "CfgVehicles" >> _crewUnitType) }) then {
+					// Resolve friendly rebel crew role identifier
+					private _crewRole = if (_isAirCrew) then {
 						if (!isNil "A3A_faction_reb" && { A3A_faction_reb isEqualType createHashMap }) then {
-							_crewUnitType = if (_isAirCrew) then {
-								A3A_faction_reb getOrDefault ["unitPilot", A3A_faction_reb getOrDefault ["unitCrew", ""]]
-							} else {
-								A3A_faction_reb getOrDefault ["unitCrew", ""]
-							};
+							A3A_faction_reb getOrDefault ["unitPilot", A3A_faction_reb getOrDefault ["unitCrew", ""]]
+						} else {
+							missionNamespace getVariable ["staticCrewReb", ""]
+						};
+					} else {
+						if (!isNil "A3A_faction_reb" && { A3A_faction_reb isEqualType createHashMap }) then {
+							A3A_faction_reb getOrDefault ["unitCrew", ""]
+						} else {
+							missionNamespace getVariable ["staticCrewReb", ""]
 						};
 					};
-					if (_crewUnitType == "" || { !isClass (configFile >> "CfgVehicles" >> _crewUnitType) }) then {
-						_crewUnitType = missionNamespace getVariable ["SDKMil", "I_G_Soldier_F"];
-					};
-					if (_crewUnitType == "" || { !isClass (configFile >> "CfgVehicles" >> _crewUnitType) }) then {
-						_crewUnitType = "I_G_Soldier_F";
+					if (_crewRole == "") then { _crewRole = missionNamespace getVariable ["staticCrewReb", ""]; };
+					if (_crewRole == "") then { _crewRole = missionNamespace getVariable ["SDKMil", "I_G_Soldier_F"]; };
+
+					// Resolve physical base class for createUnit
+					private _baseClass = missionNamespace getVariable ["SDKMil", "I_G_Soldier_F"];
+					if (_baseClass == "" || { !isClass (configFile >> "CfgVehicles" >> _baseClass) }) then {
+						_baseClass = "I_G_Soldier_F";
 					};
 
 					// Identify all empty non-cargo combat seats (driver, gunner, commander, turret)
@@ -415,12 +460,13 @@ if (_mode in ["DEPLOY", "REINFORCE"]) then {
 						_x params ["_seatUnit", "_role", "_cargoIndex", "_turretPath", "_personTurret"];
 						private _unit = objNull;
 						if (!isNil "A3A_fnc_createUnit") then {
-							_unit = [_group, _crewUnitType, _vehicleSpawnPos, [], 5] call A3A_fnc_createUnit;
-						} else {
-							_unit = _group createUnit [_crewUnitType, _vehicleSpawnPos, [], 5, "NONE"];
+							_unit = [_group, _crewRole, _vehicleSpawnPos, [], 5] call A3A_fnc_createUnit;
+						};
+						if (isNull _unit) then {
+							private _classToSpawn = if (isClass (configFile >> "CfgVehicles" >> _crewRole)) then { _crewRole } else { _baseClass };
+							_unit = _group createUnit [_classToSpawn, _vehicleSpawnPos, [], 5, "NONE"];
 						};
 						if (!isNull _unit) then {
-							_unit setVariable ["unitType", _crewUnitType, true];
 							// Assign seat IMMEDIATELY so unit is in vehicle before any init script runs
 							switch (_role) do {
 								case "driver": { _unit moveInDriver _vehicle; };
@@ -429,19 +475,13 @@ if (_mode in ["DEPLOY", "REINFORCE"]) then {
 								case "turret": { _unit moveInTurret [_vehicle, _turretPath]; };
 								default { _unit moveInAny _vehicle; };
 							};
-							try {
-								if (!isNil "A3A_fnc_FIAinit") then {
-									[_unit, false, _crewUnitType] call A3A_fnc_FIAinit;
-								};
-							} catch {
-								diag_log format ["[A3A Planning Exception] FIAinit failed for crew unit %1: %2", _unit, _exception];
-							};
+							[_unit, _crewRole] call _fnc_equipAndInitUnit;
 						};
 					} forEach _crewSeats;
 
 					private _crewMembers = crew _vehicle;
 					_group setGroupIdGlobal [_idFormat + "1"];
-					diag_log format ["[A3A Planning] GarageCrew %1: vehicle %2 crewed by %3 friendly units (%4).", _idFormat, typeOf _vehicle, count _crewMembers, _crewUnitType];
+					diag_log format ["[A3A Planning] GarageCrew %1: vehicle %2 crewed by %3 friendly units (%4).", _idFormat, typeOf _vehicle, count _crewMembers, _crewRole];
 				} else {
 					_group = createGroup teamPlayer; // Empty group as placeholder so Stage 2 can proceed
 					diag_log format ["[A3A Planning Error] GarageCrew %1: no vehicle — creating empty group as placeholder.", _idFormat];
@@ -463,33 +503,25 @@ if (_mode in ["DEPLOY", "REINFORCE"]) then {
 				diag_log "[A3A Planning Warning] A3A_fnc_spawnGroup returned groupNull. Attempting manual group creation...";
 				_group = createGroup teamPlayer;
 				if (!isNull _group) then {
+					private _baseClass = missionNamespace getVariable ["SDKMil", "I_G_Soldier_F"];
+					if (_baseClass == "" || { !isClass (configFile >> "CfgVehicles" >> _baseClass) }) then {
+						_baseClass = "I_G_Soldier_F";
+					};
+
 					{
-						private _spawnUnitType = _x;
-						if (isNil "_spawnUnitType" || {
-							_spawnUnitType == "" || {
-								!isClass (configFile >> "CfgVehicles" >> _spawnUnitType)
-							}
-						}) then {
-							diag_log format ["[A3A Planning Warning] Manual fallback: unit identifier '%1' isn't a raw createUnit-compatible classname. Falling back to 'I_G_Soldier_F'.", _spawnUnitType];
-							_spawnUnitType = "I_G_Soldier_F";
-						};
+						private _role = _x;
 						private _unit = objNull;
 						if (!isNil "A3A_fnc_createUnit") then {
-							_unit = [_group, _spawnUnitType, _spawnPos, [], 10] call A3A_fnc_createUnit;
-						} else {
-							_unit = _group createUnit [_spawnUnitType, _spawnPos, [], 10, "NONE"];
+							_unit = [_group, _role, _spawnPos, [], 10] call A3A_fnc_createUnit;
+						};
+						if (isNull _unit) then {
+							private _classToSpawn = if (isClass (configFile >> "CfgVehicles" >> _role)) then { _role } else { _baseClass };
+							_unit = _group createUnit [_classToSpawn, _spawnPos, [], 10, "NONE"];
 						};
 						if (!isNull _unit) then {
-							_unit setVariable ["unitType", _spawnUnitType, true];
-							try {
-								if (!isNil "A3A_fnc_FIAinit") then {
-									[_unit, false, _spawnUnitType] call A3A_fnc_FIAinit;
-								};
-							} catch {
-								diag_log format ["[A3A Planning Exception] FIAinit failed for unit %1: %2", _unit, _exception];
-							};
+							[_unit, _role] call _fnc_equipAndInitUnit;
 						} else {
-							diag_log format ["[A3A Planning Error] Manual createUnit failed for unit class %1.", _spawnUnitType];
+							diag_log format ["[A3A Planning Error] Manual createUnit failed for unit role %1.", _role];
 						};
 					} forEach _unitTypes;
 				};
@@ -502,11 +534,24 @@ if (_mode in ["DEPLOY", "REINFORCE"]) then {
 				};
 				_group setGroupIdGlobal [_idFormat];
 				{
-					try {
-						if (!isNil "A3A_fnc_FIAinit") then {
-							[_x, false, typeOf _x] call A3A_fnc_FIAinit;
-						};
-					} catch {};
+					private _unit = _x;
+					private _role = _unit getVariable ["unitType", ""];
+					if (_role == "" && { _forEachIndex < count _unitTypes }) then {
+						_role = _unitTypes select _forEachIndex;
+						_unit setVariable ["unitType", _role, true];
+					};
+
+					// Ensure unit has loadout equipped
+					if (primaryWeapon _unit == "" && { uniform _unit == "" }) then {
+						[_unit, _role] call _fnc_equipAndInitUnit;
+					} else {
+						// Unit already has equipment from spawnGroup; ensure FIAinit is completed with proper role
+						try {
+							if (!isNil "A3A_fnc_FIAinit") then {
+								[_unit, false, _role] call A3A_fnc_FIAinit;
+							};
+						} catch {};
+					};
 				} forEach (units _group);
 			};
 		};

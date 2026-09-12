@@ -87,6 +87,38 @@ class A3A {
         };
 
         // =====================================================
+        // CL ANTISTASI TWEAKS - UNCONSCIOUS KEYS
+        // =====================================================
+        class CL_Tweaks_UnconsciousKeys_Spacer : ExtenderParams {
+            title = "--- CL Tweaks: Unconscious Keys ---";
+            tooltip = "Configure custom Arma 3 controls (User Action 1-20) for unconscious actions.";
+            values[] = {};
+            texts[] = {};
+            default = 0;
+        };
+        class A3A_tweak_unconsciousRespawnAction : ExtenderParams {
+            title = "Respawn Key";
+            tooltip = "Choose which Arma 3 Custom Control (User Action 1 - 20) triggers Respawn while incapacitated. Off uses default 'R'.";
+            values[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20};
+            texts[] = {"Off (Default 'R')", "User Action 1", "User Action 2", "User Action 3", "User Action 4", "User Action 5", "User Action 6", "User Action 7", "User Action 8", "User Action 9", "User Action 10", "User Action 11", "User Action 12", "User Action 13", "User Action 14", "User Action 15", "User Action 16", "User Action 17", "User Action 18", "User Action 19", "User Action 20"};
+            default = 0;
+        };
+        class A3A_tweak_unconsciousPossessAction : ExtenderParams {
+            title = "Possess AI Key";
+            tooltip = "Choose which Arma 3 Custom Control (User Action 1 - 20) triggers Possess AI while incapacitated. Off uses default 'T'.";
+            values[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20};
+            texts[] = {"Off (Default 'T')", "User Action 1", "User Action 2", "User Action 3", "User Action 4", "User Action 5", "User Action 6", "User Action 7", "User Action 8", "User Action 9", "User Action 10", "User Action 11", "User Action 12", "User Action 13", "User Action 14", "User Action 15", "User Action 16", "User Action 17", "User Action 18", "User Action 19", "User Action 20"};
+            default = 0;
+        };
+        class A3A_tweak_unconsciousWithstandAction : ExtenderParams {
+            title = "Withstand / Self-Revive Key";
+            tooltip = "Choose which Arma 3 Custom Control (User Action 1 - 20) triggers Withstand / Self-Revive while incapacitated. Off uses default 'H'.";
+            values[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20};
+            texts[] = {"Off (Default 'H')", "User Action 1", "User Action 2", "User Action 3", "User Action 4", "User Action 5", "User Action 6", "User Action 7", "User Action 8", "User Action 9", "User Action 10", "User Action 11", "User Action 12", "User Action 13", "User Action 14", "User Action 15", "User Action 16", "User Action 17", "User Action 18", "User Action 19", "User Action 20"};
+            default = 0;
+        };
+
+        // =====================================================
         // CL ANTISTASI TWEAKS - PETROS / MISSIONS
         // =====================================================
         class CL_Tweaks_Petros_Spacer : ExtenderParams {
@@ -241,13 +273,6 @@ class A3A {
             values[] = {0, 99};
             texts[] = {"Any damage (Vanilla)", "Incapacitated / Dead only"};
             default = 0;
-        };
-        class A3A_tweak_unconsciousRespawnKey : ExtenderParams {
-            title = "Unconscious Respawn Key / Protection (REQUIRES SERVER RESTART)";
-            tooltip = "Rebinds the 'Hold R to Respawn' action during unconsciousness to another key, or requires a double-press of R to prevent accidental deaths.";
-            values[] = {19, 0, 20, 21, 22, 57};
-            texts[] = {"R (Default)", "Double-press R (Confirmation)", "T", "Y", "U", "Space"};
-            default = 19;
         };
 
         // =====================================================
