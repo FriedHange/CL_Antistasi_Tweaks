@@ -221,11 +221,18 @@ class A3A {
             texts[] = {};
             default = 0;
         };
+        class A3A_tweak_siegeSquadLimitMode : ExtenderParams {
+            title = "Siege Squad Limit Mode";
+            tooltip = "How the maximum number of squads per siege is determined. War Level Based grants 2 squads per war level (2 at WL1 up to 20 at WL10), independent of the 'Max Siege Squads' setting. Fixed Limit always uses the 'Max Siege Squads' setting below, regardless of war level.";
+            values[] = {0, 1};
+            texts[] = {"Fixed Limit", "War Level Based (Default)"};
+            default = 1;
+        };
         class A3A_tweak_maxSiegeSquads : ExtenderParams {
             title = "Max Siege Squads";
-            tooltip = "The maximum number of squads that can participate in a siege (1 to 10).";
-            values[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
-            texts[] = {"1 Squad", "2 Squads", "3 Squads", "4 Squads", "5 Squads", "6 Squads", "7 Squads", "8 Squads", "9 Squads", "10 Squads (Default)"};
+            tooltip = "The maximum number of squads that can participate in a siege. Only used when Siege Squad Limit Mode is set to Fixed Limit.";
+            values[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20};
+            texts[] = {"1 Squad", "2 Squads", "3 Squads", "4 Squads", "5 Squads", "6 Squads", "7 Squads", "8 Squads", "9 Squads", "10 Squads (Default)", "11 Squads", "12 Squads", "13 Squads", "14 Squads", "15 Squads", "16 Squads", "17 Squads", "18 Squads", "19 Squads", "20 Squads"};
             default = 10;
         };
         class A3A_tweak_siegeRefundOrGarrison : ExtenderParams {

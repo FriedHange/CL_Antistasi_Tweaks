@@ -1,6 +1,7 @@
 /*
     fn_resourcecheck.sqf
-    Overridden resourcecheck loop to support customizable Petros random mission trigger chances.
+    V12 resourcecheck loop with Point Campfire facility upgrades and TEH fork rules.
+    Keep the town and income section in sync with the active Antistasi fork.
 */
 if (!isServer) exitWith {
     diag_log "[A3A Ultimate Tweaks Extender] Server-only function miscalled: resourcecheck";
@@ -9,7 +10,6 @@ if (!isServer) exitWith {
 //declaring variables outside of the loop increases performance
 private _resAdd = nil;
 private _hrAdd = nil;
-private _suppBoost = nil;
 private _resBoost = nil;
 
 private _rivalsTaskChance = 5;
@@ -50,8 +50,8 @@ private _conditions = [
 ];
 
 while {true} do {
-	nextTick = time + 600;
-	waitUntil {sleep 15; time >= nextTick};
+	private _nextTick = time + 600;
+	waitUntil {sleep 15; time >= _nextTick};
     waitUntil {sleep 10; A3A_activePlayerCount > 0};
 
 	if (isNil "factories") then { factories = []; };
@@ -68,140 +68,68 @@ while {true} do {
 	_resAdd = 25;
 	_hrAdd = 0;
 
-	_suppBoost = 0.5 * (1+ ({sidesX getVariable [_x,sideUnknown] == teamPlayer} count seaports));
 	_resBoost = 1 + (0.25*({(sidesX getVariable [_x,sideUnknown] == teamPlayer) and !(_x in destroyedSites)} count factories));
+	private _pcfUpgradesEnabled = missionNamespace getVariable ["PCF_EnableResourceUpgrade", false];
+	if (_pcfUpgradesEnabled) then {
+		// Point Campfire adds 25% for every upgraded rebel factory.
+		_resBoost = _resBoost + (0.25 * (missionNamespace getVariable ["A3UE_TotalRebelFactoryUpgrades", 0]));
+	};
 
 	{
 		private _city = _x;
 		private _resAddCity = 0;
 		private _hrAddCity = 0;
-		// --- Antistasi v12.0.3+ Town Data Migration ---
-		// Fetch town data from A3A_townData HashMap with safety fallback to legacy server variables
-		private _numCiv = 0;
-		private _numVeh = 0;
-		private _supportGov = 0;
-		private _supportReb = 0;
-		private _curCitySide = sideUnknown;
-
-		private _cityData = if (!isNil "A3A_townData" && { _city in A3A_townData }) then {
-			A3A_townData get _city
-		} else {
-			server getVariable [_city, [0, 0, 0, 0]]
-		};
-
-		if (!isNil "_cityData") then {
-			if (_cityData isEqualType createHashMap) then {
-				// Modern Antistasi v12.0.3+ HashMap format
-				_numCiv = _cityData getOrDefault ["pop", _cityData getOrDefault ["population", _cityData getOrDefault ["numCiv", 0]]];
-				_numVeh = _cityData getOrDefault ["numVeh", _cityData getOrDefault ["vehicles", 0]];
-
-				// Extract support metrics (array [gov, reb] or explicit keys)
-				private _support = _cityData getOrDefault ["support", [0, 0]];
-				if (_support isEqualType []) then {
-					_supportGov = _support param [0, 0];
-					_supportReb = _support param [1, 0];
-				} else if (_support isEqualType 0) then {
-					_supportReb = _support;
-				};
-
-				if (_supportGov isEqualTo 0 && { "supportGov" in _cityData }) then {
-					_supportGov = _cityData getOrDefault ["supportGov", 0];
-				};
-				if (_supportReb isEqualTo 0 && { "supportReb" in _cityData }) then {
-					_supportReb = _cityData getOrDefault ["supportReb", 0];
-				};
-
-				_curCitySide = _cityData getOrDefault ["side", sidesX getVariable [_city, sideUnknown]];
-			} else {
-				if (_cityData isEqualType []) then {
-					// Legacy array format fallback: [numCiv, numVeh, supportGov, supportReb]
-					_cityData params [["_pCiv", 0], ["_pVeh", 0], ["_pGov", 0], ["_pReb", 0]];
-					_numCiv = _pCiv;
-					_numVeh = _pVeh;
-					_supportGov = _pGov;
-					_supportReb = _pReb;
-					_curCitySide = sidesX getVariable [_city, sideUnknown];
-				};
-			};
-		};
-
-		if (_curCitySide isEqualTo sideUnknown) then {
-			_curCitySide = sidesX getVariable [_city, sideUnknown];
-		};
-
-		private _radioTowerSide = if (!isNil "A3A_fnc_getSideRadioTowerInfluence") then {
-			[_city] call A3A_fnc_getSideRadioTowerInfluence
-		} else {
-			sideUnknown
-		};
-
-		if (!isNil "A3A_fnc_citySupportChange") then {
-			switch (_radioTowerSide) do
-			{
-				case teamPlayer: {[-1,_suppBoost,_city,false,true] spawn A3A_fnc_citySupportChange};
-				case Occupants: {[1,-1,_city,false,true] spawn A3A_fnc_citySupportChange};
-				case Invaders: {[-1,-1,_city,false,true] spawn A3A_fnc_citySupportChange};
-			};
-		};
+		// V12 stores each town as [population, vehicles, government support, rebel support].
+		private _cityData = A3A_townData get _city;
+		_cityData params [["_numCiv", 0], ["_numVeh", 0], ["_supportGov", 0], ["_supportReb", 0]];
+		private _citySide = sidesX getVariable [_city, sideUnknown];
+		private _radioTowerSide = [_city] call A3A_fnc_getSideRadioTowerInfluence;
 
 		_resAddCity = (_numCiv * (_supportReb / 100)) / 3;
 		if (!finite _resAddCity) then { _resAddCity = 0; };
-		_hrAddCity = _numCiv * (_supportReb / 10000);
+		private _hrMultiplier = overallHRGain / 100;
+		if (_numCiv > 0 && { _hrMultiplier > 0 }) then {
+			private _supportRebCapped = if (_citySide != teamPlayer) then { _supportReb min 15 } else { _supportReb };
+			private _divider = 10000 * sqrt (_numCiv / 2000);
+			_divider = (_divider max (5000 / _hrMultiplier)) min (10000 / _hrMultiplier);
+			_hrAddCity = _numCiv * (_supportRebCapped / _divider);
+		};
 
-		if (_curCitySide == Occupants) then
+		if (_citySide != teamPlayer) then
 		{
 			_resAddCity = _resAddCity / 2;
-			_hrAddCity = _hrAddCity / 2;
 		};
 		if (_radioTowerSide != teamPlayer) then { _resAddCity = _resAddCity / 2 };
 
 		_resAdd = _resAdd + _resAddCity;
 		_hrAdd = _hrAdd + _hrAddCity;
 
-		// Town joins Rebels when Rebel Support exceeds Government Support
-		if (_supportGov < _supportReb && { _curCitySide != teamPlayer }) then {
-			private _rebName = if (!isNil "A3A_faction_reb" && { "name" in A3A_faction_reb }) then { A3A_faction_reb get "name" } else { "Rebels" };
-			["TaskSucceeded", ["", format [localize "STR_notifiers_city_joined", _city, _rebName]]] remoteExec ["BIS_fnc_showNotification", teamPlayer];
-			sidesX setVariable [_city, teamPlayer, true];
-			if (!isNil "A3A_townData" && { _city in A3A_townData } && { (A3A_townData get _city) isEqualType createHashMap }) then {
-				(A3A_townData get _city) set ["side", teamPlayer];
-			};
-
-			private _aggSide = if (_curCitySide == Invaders) then { Invaders } else { Occupants };
-			[_aggSide, 10, 60] remoteExec ["A3A_fnc_addAggression", 2];
-			garrison setVariable [_city, [], true];
-			if (!isNil "A3A_fnc_mrkUpdate") then { [_city] call A3A_fnc_mrkUpdate; };
-
-			if (!isNil "milAdministrationsX" && { milAdministrationsX isNotEqualTo [] }) then {
-				private _closestAdminMarker = [milAdministrationsX, _city] call BIS_fnc_nearestPosition;
-				if (_closestAdminMarker isEqualType "" && { _closestAdminMarker != "" } && { (getMarkerPos _closestAdminMarker) distance2D (getMarkerPos _city) < 800 }) then {
-					if (!isNil "A3A_milAdministrations" && { A3A_milAdministrations isNotEqualTo [] } && { !isNil "SCRT_fnc_location_removeMilAdmin" }) then {
-						private _milAdministration = [A3A_milAdministrations, _closestAdminMarker] call BIS_fnc_nearestPosition;
-						if (!isNil "_milAdministration" && { !isNull _milAdministration }) then {
-							[_milAdministration, "SILENT"] call SCRT_fnc_location_removeMilAdmin;
-						};
-					};
+		// Preserve V12's neutral band, destroyed-town lock, and one-battle-at-a-time rule.
+		private _popReb = round (_numCiv * (_supportReb / 100));
+		private _popGov = round (_numCiv * (_supportGov / 100));
+		private _isNowEnemy = _popReb <= (_popGov * 0.667);
+		private _isNowFriendly = _popReb >= (_popGov * 1.5);
+		private _canFlipBase = !(_city in destroyedSites) && { !(_city in townSkirmishes) } && { _isNowEnemy || _isNowFriendly };
+		private _canStartSkirmish = round _numCiv >= 20 && { random 100 <= townSkirmishChance } && { !(_city in townSkirmishes) };
+		if (_canFlipBase && { _isNowFriendly } && { _citySide != teamPlayer }) then {
+			if (_canStartSkirmish) then {
+				private _origins = outposts select { sidesX getVariable [_x, sideUnknown] == _citySide };
+				private _nearOrigins = _origins select { (getMarkerPos _x) distance2D (getMarkerPos _city) < 3000 };
+				private _origin = selectRandom _nearOrigins;
+				if (isNil "_origin") then { _origin = selectRandom _origins };
+				if (!isNil "_origin") then {
+					diag_log format ["[A3A Tweaks Town] Starting V12 town battle at %1 from %2 (%3).", _city, _origin, _citySide];
+					[_citySide, _city, _origin] spawn A3A_fnc_townBattle;
+					uiSleep 1;
+				} else {
+					[_city, true] call A3A_fnc_cityChangeSide;
 				};
+			} else {
+				[_city, true] call A3A_fnc_cityChangeSide;
 			};
-
-			if (!isNil "controlsX" && { !isNil "A3A_fnc_deleteControls" }) then {
-				{ [_city, _x] spawn A3A_fnc_deleteControls } forEach controlsX;
-			};
-			if (!isNil "A3A_fnc_tierCheck") then { [] call A3A_fnc_tierCheck; };
 		};
-
-		// Town leaves Rebels when Government Support exceeds Rebel Support
-		if (_supportGov > _supportReb && { _curCitySide == teamPlayer }) then {
-			private _occName = if (!isNil "A3A_faction_occ" && { "name" in A3A_faction_occ }) then { A3A_faction_occ get "name" } else { "Occupants" };
-			["TaskFailed", ["", format [localize "STR_notifiers_city_joined", _city, _occName]]] remoteExec ["BIS_fnc_showNotification", teamPlayer];
-			sidesX setVariable [_city, Occupants, true];
-			if (!isNil "A3A_townData" && { _city in A3A_townData } && { (A3A_townData get _city) isEqualType createHashMap }) then {
-				(A3A_townData get _city) set ["side", Occupants];
-			};
-			[Occupants, -10, 45] remoteExec ["A3A_fnc_addAggression", 2];
-			garrison setVariable [_city, [], true];
-			if (!isNil "A3A_fnc_mrkUpdate") then { [_city] call A3A_fnc_mrkUpdate; };
-			if (!isNil "A3A_fnc_tierCheck") then { [] call A3A_fnc_tierCheck; };
+		if (_canFlipBase && { _isNowEnemy } && { _citySide == teamPlayer }) then {
+			[_city, false] call A3A_fnc_cityChangeSide;
 		};
 	} forEach citiesX;
 
@@ -211,12 +139,25 @@ while {true} do {
 		call A3A_fnc_checkLossCondition;
 	};
 
-	{
-		if (sidesX getVariable [_x,sideUnknown] == teamPlayer and {!(_x in destroyedSites)}) then
+	if (_pcfUpgradesEnabled) then {
+		// Point Campfire boosts the full base and resource income, including upgraded sites.
+		private _ownedResources = {sidesX getVariable [_x,sideUnknown] == teamPlayer && {!(_x in destroyedSites)}} count resourcesX;
+		private _resourceUpgrades = missionNamespace getVariable ["A3UE_TotalRebelResourceUpgrades", 0];
+		_resAdd = (_resAdd + (300 * (_ownedResources + _resourceUpgrades))) * _resBoost;
+	} else {
 		{
-			_resAdd = _resAdd + (300 * _resBoost);
-		};
-	} forEach resourcesX;
+			if (sidesX getVariable [_x,sideUnknown] == teamPlayer and {!(_x in destroyedSites)}) then {
+				_resAdd = _resAdd + (300 * _resBoost);
+			};
+		} forEach resourcesX;
+	};
+
+	// TEH charges a reserve salary based on the current HR pool at war tier 2+.
+	private _hrCount = server getVariable ["hr", 0];
+	private _hrReserveSalaries = 0;
+	if (!isNil "TEH_hrSalaries" && {tierWar > 1}) then {
+		_hrReserveSalaries = floor ((TEH_hrSalaries * skillFIA * _hrCount) / 100);
+	};
 
 	_resAdd = [_resAdd] call SCRT_fnc_common_rebelSalary;
 	if (isNil "_resAdd" || {!finite _resAdd}) then {
@@ -227,8 +168,8 @@ while {true} do {
 	_resAdd = round _resAdd;
 	if (!finite _resAdd) then { _resAdd = 25000; }; //either number is too large or something is broken
 	if (!finite _hrAdd) then { _hrAdd = 30; };
-	server setVariable ["hr", _hrAdd + (server getVariable ["hr", 0]), true];
-	server setVariable ["resourcesFIA", _resAdd + (server getVariable ["resourcesFIA", 0]), true];
+	server setVariable ["hr", _hrAdd + _hrCount, true];
+	server setVariable ["resourcesFIA", _resAdd - _hrReserveSalaries + (server getVariable ["resourcesFIA", 0]), true];
 
 	private _rebAirportsQuantity = {sidesX getVariable [_x,sideUnknown] == teamPlayer} count airportsX;
 	bombRuns = bombRuns + 0.25 * _rebAirportsQuantity;
@@ -248,18 +189,8 @@ while {true} do {
 
 	publicVariable "supportPoints";
 
-	// Regular income of finite starting weapons
-	private _equipMul = A3A_balancePlayerScale / 30;		// difficulty scaled. Hmm.
-	{
-		if (_x isEqualType "") then { continue };
-		_x params ["_class", "_initCount"];
-		private _count = _initCount * _equipMul;
-		_count = if (_count % 1 > random 1) then { ceil _count } else { floor _count };
-		private _arsenalTab = _class call jn_fnc_arsenal_itemType;
-		[_arsenalTab, _class, _count] call jn_fnc_arsenal_addItem;
-	} forEach (A3A_faction_reb get "initialRebelEquipment");
-
-	private _textX = format [localize "STR_comms_mp_taxes_income", _hrAdd, _resAdd, A3A_faction_civ get "currencySymbol"];
+	private _currency = A3A_faction_civ get "currencySymbol";
+	private _textX = format [localize "STR_comms_mp_taxes_income", _hrAdd, _resAdd, _currency, _hrReserveSalaries, _currency];
 	private _textArsenal = [] call A3A_fnc_arsenalManage;
 	if (_textArsenal != "") then {_textX = format [localize "STR_comms_mp_arsenal_updated", _textX, _textArsenal]};
 	[petros, "taxRep", _textX] remoteExec ["A3A_fnc_commsMP", [teamPlayer, civilian]];
@@ -285,6 +216,7 @@ while {true} do {
 	private _rawRandomMult = missionNamespace getVariable ["A3A_tweak_randomMissionChanceMultiplier", 100];
 	private _randomMult = if (_rawRandomMult > 5) then { _rawRandomMult / 100 } else { _rawRandomMult };
 	private _missionChance = ((5 * A3A_activePlayerCount) * _randomMult) min 50;
+	if (!isNil "TEH_hrSalaries" && {captive petros}) then { _missionChance = 0 };
 	if ((!bigAttackInProgress) and (random 100 < _missionChance)) then {[] spawn A3A_fnc_missionRequest};
 
 	//Removed from scheduler for now, as it errors on Headless Clients.
@@ -347,7 +279,8 @@ while {true} do {
 		};
 	};
 
-	if (tierWar > 2 && !isTraderQuestCompleted && !isTraderQuestAssigned) then {
+	private _traderTier = missionNamespace getVariable ["TEH_TraderWarTierReq", 3];
+	if (tierWar >= _traderTier && !isTraderQuestCompleted && !isTraderQuestAssigned) then {
 		diag_log format ["[A3A] Arms Dealer roll: %1", _traderTaskChance];
 		if (random 100 < _traderTaskChance) then {
 			diag_log "[A3A] Assigning Arms Dealer Task...";

@@ -20,9 +20,6 @@ switch (_direction) do {
 };	
 
 private _tabId = _selectedMenu select 1;
-if (_displayId == 60000 && {_tabId == 8000}) then {
-    [_display] call A3A_fnc_planning_ui;
-};
 
 // Slide current menu out to the left
 {
@@ -52,6 +49,12 @@ menuSliderCurrent = _menuSliderTarget;
 if(_displayId == 60000) then {
     switch (_tabId) do {
         case (1140): {
+            // Clean up any transient planning map-click handler - this case does
+            // not fall through to the default cleanup below, and a stale handler
+            // would otherwise run staging logic (and deselect HC groups) on the
+            // support tab's own map clicks.
+            ["A3A_planning_mapClick", "onMapSingleClick"] call BIS_fnc_removeStackedEventHandler;
+            A3A_planning_mapMode = "";
             ["ADD"] call SCRT_fnc_ui_manageSupportTabEventHandler;
         };
         default {
@@ -68,8 +71,16 @@ if(_displayId == 60000) then {
             // Clean up any transient map clicks from planning mode if not active
             if (_tabId != 8000) then {
                 ["A3A_planning_mapClick", "onMapSingleClick"] call BIS_fnc_removeStackedEventHandler;
-                onMapSingleClick "";
+                A3A_planning_mapMode = "";
             };
         };
+    };
+
+    // Build the Attack Planning UI after the slide completes and handler state
+    // is settled - building it earlier left the heavy UI construction
+    // interleaved with the tab slide animations (the spawned/scheduled script
+    // gets suspended across frames, re-firing slide logic).
+    if (_tabId == 8000) then {
+        [_display] call A3A_fnc_planning_ui;
     };
 };

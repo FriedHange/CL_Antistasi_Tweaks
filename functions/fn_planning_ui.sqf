@@ -9,6 +9,14 @@ params [["_display", findDisplay 60000, [displayNull]]];
 
 if (isNull _display) exitWith {};
 
+// Rebuild throttle: guard against runaway re-invocation loops. In one reported
+// session the UI was rebuilt up to 198 times per second (one per frame via
+// externally re-triggered tab switches), freezing the commander menu. No
+// legitimate interaction needs more than one rebuild per 100 ms.
+private _now = diag_tickTime;
+if (_now - (missionNamespace getVariable ["A3A_planning_lastBuild", -1]) < 0.1) exitWith {};
+A3A_planning_lastBuild = _now;
+
 // Ensure vehicle availability cache is updated/refreshed dynamically
 [] call A3A_fnc_planning_cacheVehicles;
 
@@ -19,13 +27,28 @@ private _activeUnitCount = if (isNil "A3A_planning_activeGroups") then { 0 } els
 	_cnt
 };
 private _activeStagingCount = count (missionNamespace getVariable ["A3A_planning_entryPoints", []]);
-diag_log format ["[A3A Planning Diagnostics] UI opened. Target: '%1' | Active Siege Groups: %2 | Active Siege Units: %3 | Active Staging Points: %4", A3A_planning_objective, _activeGroupCount, _activeUnitCount, _activeStagingCount];
+private _diagMode = missionNamespace getVariable ["A3A_tweak_siegeSquadLimitMode", 1];
+private _diagMax = missionNamespace getVariable ["A3A_tweak_maxSiegeSquads", 10];
+private _diagTier = missionNamespace getVariable ["tierWar", 1];
+diag_log format ["[A3A Planning Diagnostics] UI opened. Target: '%1' | Active Siege Groups: %2 | Active Siege Units: %3 | Active Staging Points: %4 | MaxSiegeSquads: %5 (Mode raw: %6, MaxParam raw: %7, tierWar raw: %8)", A3A_planning_objective, _activeGroupCount, _activeUnitCount, _activeStagingCount, call A3A_fnc_planning_getMaxSiegeSquads, _diagMode, _diagMax, _diagTier];
+
+// Heal High Command: ghost (deleted) or empty HC roster entries break vanilla
+// HC map selection highlights and move orders. Siege squads that were added to
+// HC in older builds had their groups deleted at siege end without removal,
+// leaving permanent ghosts behind. Purge them whenever this UI is opened.
+{
+	if (isNull _x || { count units _x == 0 }) then {
+		player hcRemoveGroup _x;
+		diag_log "[A3A Planning] Sanitized ghost/empty High Command group entry.";
+	};
+} forEach (+(hcAllGroups player));
 
 if (isNil "A3A_planning_closeEHAdded") then {
 	A3A_planning_closeEHAdded = true;
 	_display displayAddEventHandler ["Unload", {
 		["A3A_planning_mapClick", "onMapSingleClick"] call BIS_fnc_removeStackedEventHandler;
-		onMapSingleClick "";
+		A3A_planning_mapMode = "";
+		A3A_planning_selectedStagingToMove = "";
 		A3A_planning_closeEHAdded = nil;
 	}];
 };
@@ -55,22 +78,28 @@ A3A_fnc_planning_getSquadDetails = {
 	private _displayName = "";
 	private _vehType = "";
 
-	private _crewType = missionNamespace getVariable ["SDKMil", "I_G_Soldier_F"];
-	if (isNil "_crewType" || {
-		_crewType == "" || {
-			!isClass (configFile >> "CfgVehicles" >> _crewType)
-		}
-	}) then {
+	// Compatibility helper: validates a unit type identifier. Antistasi Ultimate V12
+	// faction unit types (e.g. "loadouts_reb_militia_Rifleman") are loadout identifiers
+	// resolved by A3A_fnc_createUnit on the server, NOT CfgVehicles classnames - so a
+	// config-only check would wrongly reject them and fall back to vanilla units.
+	private _fnc_isValidUnitType = {
+		params ["_unitType"];
+		if (isNil "_unitType" || { !(_unitType isEqualType "") } || { _unitType == "" }) exitWith { false };
+		if (isClass (configFile >> "CfgVehicles" >> _unitType)) exitWith { true };
+		(_unitType find "loadouts_") == 0
+	};
+
+	private _crewType = missionNamespace getVariable ["SDKMil", ""];
+	if !([_crewType] call _fnc_isValidUnitType) then {
+		_crewType = A3A_faction_reb getOrDefault ["unitRifle", ""];
+	};
+	if !([_crewType] call _fnc_isValidUnitType) then {
 		private _squadGroup = A3A_faction_reb getOrDefault ["groupSquad", []];
 		if (count _squadGroup > 0) then {
 			_crewType = _squadGroup # 0;
 		};
 	};
-	if (isNil "_crewType" || {
-		_crewType == "" || {
-			!isClass (configFile >> "CfgVehicles" >> _crewType)
-		}
-	}) then {
+	if !([_crewType] call _fnc_isValidUnitType) then {
 		_crewType = "I_G_Soldier_F";
 	};
 
@@ -141,7 +170,7 @@ A3A_fnc_planning_getSquadDetails = {
 			_displayName = "Mortar Team";
 		};
 		case 6: {
-			private _vehCrewType = missionNamespace getVariable ["staticCrewReb", _crewType];
+			private _vehCrewType = A3A_faction_reb getOrDefault ["unitCrew", missionNamespace getVariable ["staticCrewReb", _crewType]];
 			_squadType = [_vehCrewType, _vehCrewType];
 			_idFormat = "Tech-";
 			_special = "VehicleSquad";
@@ -149,7 +178,7 @@ A3A_fnc_planning_getSquadDetails = {
 			_vehType = A3A_planning_cachedVehicles getOrDefault ["LIGHT_ARMED", ""];
 		};
 		case 7: {
-			private _vehCrewType = missionNamespace getVariable ["staticCrewReb", _crewType];
+			private _vehCrewType = A3A_faction_reb getOrDefault ["unitCrew", missionNamespace getVariable ["staticCrewReb", _crewType]];
 			_squadType = [_vehCrewType, _vehCrewType];
 			_idFormat = "AT.Tech-";
 			_special = "VehicleSquad";
@@ -157,7 +186,7 @@ A3A_fnc_planning_getSquadDetails = {
 			_vehType = A3A_planning_cachedVehicles getOrDefault ["AT", ""];
 		};
 		case 9: {
-			private _vehCrewType = missionNamespace getVariable ["staticCrewReb", _crewType];
+			private _vehCrewType = A3A_faction_reb getOrDefault ["unitCrew", missionNamespace getVariable ["staticCrewReb", _crewType]];
 			_squadType = [_vehCrewType, _vehCrewType];
 			_idFormat = "M.AA-";
 			_special = "VehicleSquad";
@@ -165,7 +194,7 @@ A3A_fnc_planning_getSquadDetails = {
 			_vehType = A3A_planning_cachedVehicles getOrDefault ["AA", ""];
 		};
 		case 11: {
-			private _vehCrewType = missionNamespace getVariable ["staticCrewReb", _crewType];
+			private _vehCrewType = A3A_faction_reb getOrDefault ["unitCrew", missionNamespace getVariable ["staticCrewReb", _crewType]];
 			_squadType = [_vehCrewType, _vehCrewType];
 			_idFormat = "APC-";
 			_special = "VehicleSquad";
@@ -173,7 +202,7 @@ A3A_fnc_planning_getSquadDetails = {
 			_vehType = A3A_planning_cachedVehicles getOrDefault ["APC", ""];
 		};
 		case 12: {
-			private _vehCrewType = missionNamespace getVariable ["staticCrewReb", _crewType];
+			private _vehCrewType = A3A_faction_reb getOrDefault ["unitCrew", missionNamespace getVariable ["staticCrewReb", _crewType]];
 			_squadType = [_vehCrewType, _vehCrewType];
 			_idFormat = "Tank-";
 			_special = "VehicleSquad";
@@ -499,7 +528,7 @@ A3A_fnc_planning_autoQueueGarageVehicle = {
 		[_display] call A3A_fnc_planning_ui;
 	};
 
-	private _maxSiegeSquads = missionNamespace getVariable ["A3A_tweak_maxSiegeSquads", 10];
+	private _maxSiegeSquads = call A3A_fnc_planning_getMaxSiegeSquads;
 	if (count A3A_planning_queue >= _maxSiegeSquads) exitWith {
 		["Limit Reached", format ["You cannot queue more than %1 squads for a single siege.", _maxSiegeSquads], true] call A3A_fnc_planning_showNotification;
 		[_display] call A3A_fnc_planning_ui;
@@ -616,7 +645,6 @@ A3A_fnc_planning_openGarageBrowser = {
 		};
 		false
 	}];
-	A3A_planning_garageEscEH = _escEH;
 
 	// Dark semi-transparent background
 	private _bg = _display ctrlCreate ["TextBase", 8501, _modalGroup];
@@ -840,7 +868,7 @@ A3A_fnc_planning_openGarageBrowser = {
 private _controlsGroup = _display displayCtrl 8000;
 if (isNull _controlsGroup) then {
 	_controlsGroup = _display ctrlCreate ["ScrtRscControlsGroup", 8000];
-	_controlsGroup ctrlSetPosition [-0.4 * safeZoneW + safeZoneX, safeZoneY + 12 * _uH, 26 * _uW, safeZoneH - 14 * _uH];
+	_controlsGroup ctrlSetPosition [safeZoneX, safeZoneY + 12 * _uH, 26 * _uW, safeZoneH - 14 * _uH];
 	_controlsGroup ctrlSetFade 0;
 	_controlsGroup ctrlCommit 0;
 };
@@ -1064,7 +1092,7 @@ if (isNull _ctrlTitleCheck) then {
 			["Denied", "You must set and select a deployment marker/staging area first.", true] call A3A_fnc_planning_showNotification;
 		};
 
-		private _maxSiegeSquads = missionNamespace getVariable ["A3A_tweak_maxSiegeSquads", 10];
+		private _maxSiegeSquads = call A3A_fnc_planning_getMaxSiegeSquads;
 		if (count A3A_planning_queue >= _maxSiegeSquads) exitWith {
 			["Limit Reached", format ["You cannot queue more than %1 squads for a single siege.", _maxSiegeSquads], true] call A3A_fnc_planning_showNotification;
 		};
@@ -1205,6 +1233,14 @@ if (isNull _ctrlTitleCheck) then {
 			["Denied", "You must queue at least one squad to deploy.", true] call A3A_fnc_planning_showNotification;
 		};
 
+		// Independent enforcement of the squad limit at the final checkpoint.
+		// Even if a queue-add path ever slips past the per-click limit checks
+		// (e.g. corrupted param values), the deployment itself is still capped.
+		private _maxSiegeSquadsFinal = call A3A_fnc_planning_getMaxSiegeSquads;
+		if (count A3A_planning_queue > _maxSiegeSquadsFinal) exitWith {
+			["Limit Reached", format ["The current war level allows a maximum of %1 squads per siege. Remove %2 squads from the queue and try again.", _maxSiegeSquadsFinal, (count A3A_planning_queue) - _maxSiegeSquadsFinal], true] call A3A_fnc_planning_showNotification;
+		};
+
 		private _totalMoney = 0;
 		private _totalHR = 0;
 		{
@@ -1286,9 +1322,7 @@ private _ctrlObjText = _display displayCtrl 8011;
 private _targetName = "Target: None Selected";
 if (A3A_planning_objective != "") then {
 	private _objMarker = A3A_planning_objective;
-	private _name = markerText _objMarker;
-	if (_name == "") then { _name = markerText ("Dum" + _objMarker); };
-	if (_name == "") then { _name = _objMarker; };
+	private _name = [_objMarker] call A3A_fnc_planning_getMarkerName;
 	if (_isReinforceMode) then {
 		_targetName = format ["<t color='#84B062'>Target (REINFORCING):</t> <t color='#FFFFFF'>%1</t>", _name];
 	} else {
@@ -1482,19 +1516,14 @@ private _ctrlCapLabel = _display displayCtrl 8043;
 if (!isNull _ctrlCapChk) then { _ctrlCapChk ctrlEnable _hasStaging; };
 if (!isNull _ctrlCapLabel) then { _ctrlCapLabel ctrlEnable _hasStaging; };
 
-// High Command and Queue limit checks
-private _maxSiegeSquads = missionNamespace getVariable ["A3A_tweak_maxSiegeSquads", 10];
-private _currentHcCount = count (hcAllGroups player);
-private _maxHcLimit = if (player call A3A_fnc_isMember) then {
-	10
-} else {
-	6
-};
+// Siege queue limit check (siege squads deploy without HC slots, so the
+// High Command group limit does not apply to the siege queue)
+private _maxSiegeSquads = call A3A_fnc_planning_getMaxSiegeSquads;
 
 private _queueCount = count A3A_planning_queue;
 private _selGarageClass = missionNamespace getVariable ["A3A_planning_selectedGarageVehicleClass", ""];
 private _garageValid = (!_isGarageCrewSelected || { _selGarageClass != "" });
-private _canQueue = (_queueCount < _maxSiegeSquads) && (_currentHcCount + _queueCount < _maxHcLimit) && _hasStaging;
+private _canQueue = (_queueCount < _maxSiegeSquads) && _hasStaging;
 private _canQueueFinal = _canQueue && _garageValid;
 
 if (!isNull _ctrlBtnQueue) then {
@@ -1507,11 +1536,7 @@ if (!isNull _ctrlBtnQueue) then {
 			if (_isGarageCrewSelected && { _selGarageClass == "" }) then {
 				_tooltip = "Select a vehicle from the HQ Garage first.";
 			} else {
-				if (_queueCount >= _maxSiegeSquads) then {
-					_tooltip = format ["Deployment limit reached: Maximum of %1 squads per siege.", _maxSiegeSquads];
-				} else {
-					_tooltip = "High Command limit reached: Cannot recruit more squads.";
-				};
+				_tooltip = format ["Deployment limit reached: Maximum of %1 squads per siege.", _maxSiegeSquads];
 			};
 		};
 		_ctrlBtnQueue ctrlSetTooltip _tooltip;
@@ -1576,22 +1601,24 @@ private _totalHR = 0;
 
 // Update Cumulative Costs text
 private _costText = format [
-	"<t size='1.1'>CUMULATIVE COSTS</t><br/>HR Required: <t color='#84B062'>%1 HR</t><br/>Money Cost: <t color='#E3DCBE'>%2 €</t><br/>%3/%4 Squads Deployed<br/>HC Slots: %5 / %6 (Limit: %6)",
+	"<t size='1.1'>CUMULATIVE COSTS</t><br/>HR Required: <t color='#84B062'>%1 HR</t><br/>Money Cost: <t color='#E3DCBE'>%2 €</t><br/>%3/%4 Squads Deployed",
 	_totalHR,
 	_totalMoney,
 	_queueCount,
-	_maxSiegeSquads,
-	_currentHcCount + _queueCount,
-	_maxHcLimit
+	_maxSiegeSquads
 ];
 if (!isNull _ctrlCostLabel) then {
 	_ctrlCostLabel ctrlSetStructuredText parseText _costText;
 	_ctrlCostLabel ctrlCommit 0;
 };
 
-// Re-adjust controls group to force recalculation of the vertical scroll range
+// Re-adjust controls group to force recalculation of the vertical scroll range.
+// Use the fixed on-screen geometry rather than ctrlPosition: this UI is often
+// (re)built right after the tab slide-in starts, and ctrlPosition then returns
+// the interpolated mid-animation position. Re-committing that would freeze the
+// panel partway off-screen - the tab appeared to vanish until the commander
+// menu was reopened.
 if (!isNull _controlsGroup) then {
-	private _currentPos = ctrlPosition _controlsGroup;
-	_controlsGroup ctrlSetPosition [_currentPos # 0, _currentPos # 1, _currentPos # 2, safeZoneH - 14 * _uH];
+	_controlsGroup ctrlSetPosition [safeZoneX, safeZoneY + 12 * _uH, 26 * _uW, safeZoneH - 14 * _uH];
 	_controlsGroup ctrlCommit 0;
 };

@@ -110,17 +110,26 @@ private _fnc_postCapture = {
 							_totalRefundHR = _totalRefundHR + round (_costHR * _ratio);
 						};
 
-						// Clean up world objects (classnames already captured above)
-						{
-							deleteVehicle _x;
-						} forEach _groupVehicles;
-						{
-							deleteVehicle _x;
-						} forEach _staticEmplacements;
-						{
-							deleteVehicle _x;
-						} forEach _aliveUnits;
-						deleteGroup _group;
+					// Clean up world objects (classnames already captured above)
+					{
+						deleteVehicle _x;
+					} forEach _groupVehicles;
+					{
+						deleteVehicle _x;
+					} forEach _staticEmplacements;
+					{
+						deleteVehicle _x;
+					} forEach _aliveUnits;
+
+					// Remove from High Command before deletion - groups deleted
+					// while subordinated leave ghost entries that break the
+					// vanilla HC map interface (selection/orders)
+					private _hcOwner = _group getVariable ["siege_hcOwner", -1];
+					if (_hcOwner > 0) then {
+						[_group] remoteExec ["A3A_fnc_planning_localRemoveHC", _hcOwner];
+					};
+
+					deleteGroup _group;
 					};
 				};
 			};
@@ -132,16 +141,18 @@ private _fnc_postCapture = {
 			[_allRecoveredVehicles] call A3A_fnc_planning_serverAddGarage;
 		};
 
-		private _markerDispName = markerText ("Dum" + _marker);
-		if (_markerDispName == "") then { _markerDispName = markerText _marker; };
-		if (_markerDispName == "" && !isNil "A3A_fnc_localizar") then { _markerDispName = [_marker] call A3A_fnc_localizar; };
-		if (_markerDispName == "") then { _markerDispName = _marker; };
+		private _markerDispName = [_marker] call A3A_fnc_planning_getMarkerName;
 
 		// --- apply garrison (with Antistasi capacity capping & overflow refund) ---
 		if (_captureAction == 1 && { _totalGarrisonedCount > 0 }) then {
-			private _maxCapacity = if (!isNil "A3A_fnc_garrisonLimit") then {
-				[_marker] call A3A_fnc_garrisonLimit
+			// Compatibility: garrison limit function is named A3A_fnc_getGarrisonLimit
+			// in current Antistasi Ultimate builds (older builds: A3A_fnc_garrisonLimit).
+			private _maxCapacity = if (!isNil "A3A_fnc_getGarrisonLimit") then {
+				[_marker] call A3A_fnc_getGarrisonLimit
 			} else {
+				if (!isNil "A3A_fnc_garrisonLimit") then {
+					[_marker] call A3A_fnc_garrisonLimit
+				} else {
 					private _airports = missionNamespace getVariable ["airportsX", []];
 					private _milbases = missionNamespace getVariable ["milbases", []];
 					private _outposts = missionNamespace getVariable ["outposts", []];
@@ -152,8 +163,13 @@ private _fnc_postCapture = {
 						default { 20 };
 					};
 				};
+			};
 
-				private _existingGarrison = if (!isNil "garrison") then { garrison getVariable [_marker, []] } else { [] };
+				// A3A_fnc_getGarrisonLimit returns -1 when garrison capacity is set to unlimited
+			private _capacityIsUnlimited = (_maxCapacity isEqualTo -1);
+			if (_capacityIsUnlimited) then { _maxCapacity = 10^6; };
+
+			private _existingGarrison = if (!isNil "garrison") then { garrison getVariable [_marker, []] } else { [] };
 				private _currentCount = count _existingGarrison;
 				private _availableSlots = (_maxCapacity - _currentCount) max 0;
 
@@ -172,20 +188,92 @@ private _fnc_postCapture = {
 					diag_log format ["[A3A Planning] Garrisoning %1 surviving siege troops at '%2' (Cap: %3, Existing: %4, Available: %5).", count _classnamesToGarrison, _marker, _maxCapacity, _currentCount, _availableSlots];
 					[_classnamesToGarrison, teamPlayer, _marker, 2] remoteExec ["A3A_fnc_garrisonUpdate", 2];
 
-					// If the zone is currently loaded by a player (spawner != 2), physically spawn the garrison units in the world immediately
-					private _spawnerState = if (!isNil "spawner") then { spawner getVariable [_marker, 2] } else { 2 };
-					if (_spawnerState != 2) then {
-						diag_log format ["[A3A Planning] Zone '%1' is currently loaded (spawner=%2). Spawning %3 garrison units via createSDKGarrisonsTemp.", _marker, _spawnerState, count _classnamesToGarrison];
-						[_marker, _classnamesToGarrison] spawn {
-							params ["_marker", "_units"];
+				// If the zone is currently loaded by a player (spawner != 2), physically spawn the garrison units in the world immediately
+				private _spawnerState = if (!isNil "spawner") then { spawner getVariable [_marker, 2] } else { 2 };
+				if (_spawnerState != 2) then {
+					diag_log format ["[A3A Planning] Zone '%1' is currently loaded (spawner=%2). Spawning %3 garrison units via createSDKGarrisonsTemp.", _marker, _spawnerState, count _classnamesToGarrison];
+					[_marker, _classnamesToGarrison] spawn {
+						params ["_marker", "_units"];
+
+						// Spawn in small batches. The previous one-by-one trickle
+						// (0.3s per unit) kept the zone in a half-spawned state for
+						// almost a minute, racing against the A3A spawner state
+						// machine (ENABLED->DISABLED freeze transitions, despawn
+						// watchers) the whole time.
+						private _batch = [];
+						{
+							_batch pushBack _x;
+							if (count _batch >= 10) then {
+								{
+									if (!isNil "A3A_fnc_createSDKGarrisonsTemp") then {
+										[_marker, _x] remoteExec ["A3A_fnc_createSDKGarrisonsTemp", 2];
+									};
+								} forEach _batch;
+								_batch = [];
+								sleep 0.1;
+							};
+						} forEach _units;
+						if (count _batch > 0) then {
 							{
 								if (!isNil "A3A_fnc_createSDKGarrisonsTemp") then {
 									[_marker, _x] remoteExec ["A3A_fnc_createSDKGarrisonsTemp", 2];
 								};
-								sleep 0.3;
-							} forEach _units;
+							} forEach _batch;
+						};
+
+						// Safety net for the A3A despawn state machine. A captured
+						// zone can deadlock in the DISABLED (frozen) state forever:
+						// enemy stragglers with spawner=true lingering near the
+						// marker keep blocking the DISABLED->DESPAWN transition, so
+						// the garrison soldiers are neither simulated nor deleted
+						// and remain as frozen statues. When no player has been
+						// near the zone for a sustained period, force the despawn
+						// state (firing A3A's own per-unit watchers) and sweep any
+						// leftover garrison units ourselves. The garrison itself is
+						// virtual (garrison namespace), so this only removes world
+						// clutter - the zone respawns its garrison when a player
+						// returns, exactly as normal A3A behaviour.
+						sleep 60;
+						private _radius = missionNamespace getVariable ["distanceSPWN", 1500];
+						private _emptySince = -1;
+						private _deadline = diag_tickTime + 7200;
+						while { diag_tickTime < _deadline } do {
+							sleep 10;
+							private _playersNear = (allPlayers - entities "HeadlessClient_F") inAreaArray [getMarkerPos _marker, _radius, _radius];
+							if (count _playersNear == 0) then {
+								if (_emptySince < 0) then { _emptySince = diag_tickTime };
+								if (diag_tickTime - _emptySince >= 180) then {
+									if (!isNil "spawner") then {
+										if (spawner getVariable [_marker, 2] != 2) then {
+											spawner setVariable [_marker, 2, true];
+											diag_log format ["[A3A Planning] Zone '%1' is stuck loaded with no players nearby - forcing despawn state.", _marker];
+										};
+									};
+									sleep 20;
+
+									private _leftovers = allUnits select {
+										(alive _x)
+										&& { (_x getVariable ["markerX", ""] == _marker) }
+										&& { (side group _x) == teamPlayer }
+									};
+									if (count _leftovers > 0) then {
+										{
+											private _grp = group _x;
+											private _veh = vehicle _x;
+											if (_veh != _x && { _veh isKindOf "StaticWeapon" }) then { deleteVehicle _veh };
+											deleteVehicle _x;
+											if ((count units _grp) == 0) then { deleteGroup _grp };
+										} forEach _leftovers;
+										diag_log format ["[A3A Planning] Cleaned up %1 leftover garrison units at '%2' after forcing zone despawn.", count _leftovers, _marker];
+									};
+									_emptySince = -1;
+								};
+							} else {
+								_emptySince = -1;
+							};
 						};
 					};
+				};
 				};
 
 				if (count _unitsOverflow > 0) then {
@@ -205,7 +293,12 @@ private _fnc_postCapture = {
 					};
 				};
 
-				private _msg = format ["Garrisoned %1 surviving siege troops at %2 (Capacity: %3/%4).", count _unitsToGarrison, _markerDispName, (count _unitsToGarrison + _currentCount) min _maxCapacity, _maxCapacity];
+				private _capacityText = if (_capacityIsUnlimited) then {
+				"Unlimited"
+			} else {
+				format ["%1/%2", (count _unitsToGarrison + _currentCount) min _maxCapacity, _maxCapacity]
+			};
+			private _msg = format ["Garrisoned %1 surviving siege troops at %2 (Capacity: %3).", count _unitsToGarrison, _markerDispName, _capacityText];
 				if (count _unitsOverflow > 0) then {
 					_msg = _msg + format [" Refunded %1 overflow troops.", count _unitsOverflow];
 				};

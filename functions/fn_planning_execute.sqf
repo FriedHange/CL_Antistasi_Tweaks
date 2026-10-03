@@ -287,41 +287,32 @@ if (_mode in ["DEPLOY", "REINFORCE"]) then {
 
 		// Helper to equip and initialize a rebel unit with its assigned faction loadout
 		private _fnc_equipAndInitUnit = {
-			params ["_unit", "_unitRole"];
-			if (isNull _unit) exitWith {};
-
-			// Resolve loadout via Antistasi loadout system
-			private _loadout = nil;
-			if (!isNil "_unitRole" && { _unitRole != "" }) then {
-				if (!isNil "A3A_fnc_getLoadout") then {
-					_loadout = [_unitRole] call A3A_fnc_getLoadout;
-				};
-				if (isNil "_loadout") then {
-					_loadout = _unitRole;
-				};
-			};
-
-			// Apply loadout to unit
-			if (!isNil "A3A_fnc_setLoadout" && { !isNil "_loadout" }) then {
-				try {
-					[_unit, _loadout] call A3A_fnc_setLoadout;
-				} catch {
-					diag_log format ["[A3A Planning Exception] setLoadout failed for %1 with %2: %3", _unit, _unitRole, _exception];
-				};
-			};
-
-			// Persist unitType role
-			if (!isNil "_unitRole" && { _unitRole != "" }) then {
-				_unit setVariable ["unitType", _unitRole, true];
-			};
-
-			// Initialize rebel unit AI, skills, and event handlers
+			params ["_unit", "_unitRole", ["_allowUnarmed", false]];
+			if (isNull _unit) exitWith { false };
+			if (_unitRole != "") then { _unit setVariable ["unitType", _unitRole, true] };
+			// V12 reads unitType from the unit. Its third FIAinit argument enables
+			// rebel equipment; a role string is not a loadout for setUnitLoadout.
 			try {
 				if (!isNil "A3A_fnc_FIAinit") then {
-					[_unit, false, _unitRole] call A3A_fnc_FIAinit;
+					[_unit, false, true] call A3A_fnc_FIAinit;
 				};
 			} catch {
 				diag_log format ["[A3A Planning Exception] FIAinit failed for unit %1: %2", _unit, _exception];
+			};
+			private _isUnarmedRole = _allowUnarmed || { (toLower _unitRole) find "unarmed" >= 0 };
+			private _hasWeapon = primaryWeapon _unit != "" || { secondaryWeapon _unit != "" || { handgunWeapon _unit != "" } };
+			if (!_isUnarmedRole && { !_hasWeapon }) then {
+				try { [_unit, 1] call A3A_fnc_equipRebel } catch {
+					diag_log format ["[A3A Planning Exception] equipRebel retry failed for role %1: %2", _unitRole, _exception];
+				};
+				_hasWeapon = primaryWeapon _unit != "" || { secondaryWeapon _unit != "" || { handgunWeapon _unit != "" } };
+			};
+			if (!_isUnarmedRole && { !_hasWeapon }) then {
+				diag_log format ["[A3A Planning Error] Role %1 remained unarmed after rebel equipment; unit removed from siege.", _unitRole];
+				deleteVehicle _unit;
+				false
+			} else {
+				true
 			};
 		};
 
@@ -475,7 +466,7 @@ if (_mode in ["DEPLOY", "REINFORCE"]) then {
 								case "turret": { _unit moveInTurret [_vehicle, _turretPath]; };
 								default { _unit moveInAny _vehicle; };
 							};
-							[_unit, _crewRole] call _fnc_equipAndInitUnit;
+							[_unit, _crewRole, true] call _fnc_equipAndInitUnit;
 						};
 					} forEach _crewSeats;
 
@@ -518,9 +509,7 @@ if (_mode in ["DEPLOY", "REINFORCE"]) then {
 							private _classToSpawn = if (isClass (configFile >> "CfgVehicles" >> _role)) then { _role } else { _baseClass };
 							_unit = _group createUnit [_classToSpawn, _spawnPos, [], 10, "NONE"];
 						};
-						if (!isNull _unit) then {
-							[_unit, _role] call _fnc_equipAndInitUnit;
-						} else {
+						if (isNull _unit) then {
 							diag_log format ["[A3A Planning Error] Manual createUnit failed for unit role %1.", _role];
 						};
 					} forEach _unitTypes;
@@ -541,23 +530,20 @@ if (_mode in ["DEPLOY", "REINFORCE"]) then {
 						_unit setVariable ["unitType", _role, true];
 					};
 
-					// Ensure unit has loadout equipped
-					if (primaryWeapon _unit == "" && { uniform _unit == "" }) then {
-						[_unit, _role] call _fnc_equipAndInitUnit;
-					} else {
-						// Unit already has equipment from spawnGroup; ensure FIAinit is completed with proper role
-						try {
-							if (!isNil "A3A_fnc_FIAinit") then {
-								[_unit, false, _role] call A3A_fnc_FIAinit;
-							};
-						} catch {};
-					};
+				[_unit, _role] call _fnc_equipAndInitUnit;
 				} forEach (units _group);
 			};
 		};
 
 		if (isNull _group) exitWith {
 			diag_log "[A3A Planning Error] Group creation failed entirely.";
+			grpNull
+		};
+		if (units _group isEqualTo [] || { _special != "GarageCrew" && { count (units _group) < count _unitTypes } }) exitWith {
+			diag_log format ["[A3A Planning Error] %1 produced %2/%3 equipped units; cancelling squad.", _idFormat, count (units _group), count _unitTypes];
+			{ deleteVehicle _x } forEach (units _group);
+			if (!isNull _vehicle) then { deleteVehicle _vehicle };
+			deleteGroup _group;
 			grpNull
 		};
 
@@ -722,6 +708,10 @@ if (_mode in ["DEPLOY", "REINFORCE"]) then {
 			} && {
 				_roleTag in ["ASSAULT", "CREW"]
 			}) then {
+				// Track the owning client so the group can be removed from HC
+				// before it is deleted at siege end (ghost HC entries break the
+				// vanilla HC map interface)
+				_group setVariable ["siege_hcOwner", _clientOwnerID, true];
 				[_group] remoteExec ["A3A_fnc_planning_localAddHC", _clientOwnerID];
 			};
 
@@ -954,7 +944,10 @@ if (_mode in ["DEPLOY", "REINFORCE"]) then {
 
 						deleteMarker _trackMarker;
 					};
-				};
+				} else {
+					[_costHR, _costMoney] call A3A_fnc_resourcesFIA;
+					diag_log format ["[A3A Planning Error] Refunded failed squad %1 (%2 HR, %3 resources).", _displayName, _costHR, _costMoney];
+			};
 			};
 		} forEach _validatedQueue;
 		diag_log "[A3A DEBUG] Stage 7: dispatch loop completed";

@@ -19,6 +19,15 @@ private _fnc_checkIfAppropriateLocation = {
 
 private _hqMarkerPos = getMarkerPos "Synd_HQ";
 
+// Heal High Command: ghost (deleted) or empty HC roster entries break vanilla
+// HC map selection highlights and move orders. Purge them on menu open.
+{
+	if (isNull _x || { count units _x == 0 }) then {
+		player hcRemoveGroup _x;
+		diag_log "[A3A Planning] Sanitized ghost/empty High Command group entry (commander menu).";
+	};
+} forEach (+(hcAllGroups player));
+
 if (call _fnc_checkIfAppropriateLocation) then {
 	menuSliderArray = [
 		[localize "STR_commander_menu_abilities_header_upper", 1140],

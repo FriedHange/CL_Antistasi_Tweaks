@@ -33,6 +33,127 @@ if (isNil "A3A_planning_initDone") then {
 		    true
 	    };
 
+	    // Global function: Resolve the human-readable display name of a map marker.
+	    // Compatibility: Antistasi Ultimate V12 removed the marker text from most "Dum"
+	    // dummy markers (titles now live in the client-side A3U_mrkHoverMetaMap hover
+	    // metadata, optionally with an HTML description appended), so the old
+	    // markerText ("Dum" + marker) lookup returned "" and UI fell back to raw
+	    // names like "Outpost_25". Resolution order:
+	    // 1. A3U_mrkHoverMetaMap entry (V12+), HTML stripped
+	    // 2. markerText of the "Dum" dummy marker (legacy versions / V12 airports & milbases)
+	    // 3. markerText of the marker itself
+	    // 4. Unique military designation name (V12 update naming)
+	    // 5. A3A_fnc_localizar dynamic localization (V12+/legacy)
+	    // 6. raw marker name
+	    A3A_fnc_planning_getMarkerName = {
+		    params [["_marker", "", [""]]];
+		    if (_marker == "") exitWith { "" };
+
+		    private _name = "";
+		    private _metaMap = missionNamespace getVariable ["A3U_mrkHoverMetaMap", []];
+		    if (_metaMap isEqualType createHashMap) then {
+			    {
+				    private _entry = _metaMap get _x;
+				    if (!isNil "_entry" && { _entry isEqualType [] } && { count _entry > 0 } && { (_entry select 0) isEqualType "" }) exitWith {
+					    _name = _entry select 0;
+				    };
+			    } forEach [_marker, "Dum" + _marker];
+		    };
+		    if ("<" in _name) then {
+			    _name = (_name splitString "<") select 0;
+		    };
+		    if (_name == "") then { _name = markerText ("Dum" + _marker); };
+		    if (_name == "") then { _name = markerText _marker; };
+		    if (_name == "") then { _name = [_marker] call A3A_fnc_planning_getBaseDesignation; };
+		    if (_name == "" && { !isNil "A3A_fnc_localizar" }) then {
+			    _name = [_marker] call A3A_fnc_localizar;
+		    };
+		    if (_name == "") then { _name = _marker; };
+		    _name
+	    };
+
+	    // Global function: Resolve a military base's unique designation name as
+	    // introduced by the V12 update. Bases used to be named after their nearest
+	    // city plus type ("<city> Outpost"); they now carry unique military
+	    // designations stored in pipe-separated stringtable lists, indexed by the
+	    // marker's position in its zone array (see A3A_fnc_mrkUpdate). Returns ""
+	    // when no designation exists for this marker (resources, factories,
+	    // antennas etc. keep their city-based names).
+	    A3A_fnc_planning_getBaseDesignation = {
+		    params [["_marker", "", [""]]];
+		    if (_marker == "") exitWith { "" };
+
+		    private _fnc_lookup = {
+			    params ["_zone", "_list", "_locKey"];
+			    private _idx = _list find _zone;
+			    if (_idx < 0) exitWith { "" };
+			    private _raw = localize _locKey;
+			    if (_raw == _locKey) exitWith { "" };
+			    private _names = _raw splitString "|";
+			    if (_idx >= count _names) exitWith { "" };
+			    _names select _idx
+		    };
+
+		    private _name = "";
+		    call {
+			    if (_marker in (missionNamespace getVariable ["outposts", []])) exitWith {
+				    private _n = [_marker, (missionNamespace getVariable ["outposts", []]), "STR_A3AU_outpostNames"] call _fnc_lookup;
+				    if (_n != "") then { _name = format [localize "STR_outpost", _n] };
+			    };
+			    if (_marker in (missionNamespace getVariable ["airportsX", []])) exitWith {
+				    private _n = [_marker, (missionNamespace getVariable ["airportsX", []]), "STR_A3AU_airfieldNames"] call _fnc_lookup;
+				    if (_n != "") then { _name = format [localize "STR_airbase", _n] };
+			    };
+			    if (_marker in (missionNamespace getVariable ["milbases", []])) exitWith {
+				    private _n = [_marker, (missionNamespace getVariable ["milbases", []]), "STR_A3AU_milbaseNames"] call _fnc_lookup;
+				    if (_n != "") then { _name = format [localize "STR_milbase", _n] };
+			    };
+			    if (_marker in (missionNamespace getVariable ["seaports", []])) exitWith {
+				    private _n = [_marker, (missionNamespace getVariable ["seaports", []]), "STR_A3AU_seaportNames"] call _fnc_lookup;
+				    if (_n != "") then {
+					    if (toLowerANSI worldName in ["enoch", "vn_khe_sanh", "esseker", "sefrouramal"]) then {
+						    _name = format [localize "STR_port_river", _n];
+					    } else {
+						    _name = format [localize "STR_port_sea", _n];
+					    };
+				    };
+			    };
+		    };
+		    _name
+	    };
+
+	    // Global function: Resolve the effective maximum number of siege squads.
+	    // Mode 1 (default): War Level Based - linear progression at 2 squads per
+	    // war level (tierWar): WL1 = 2, WL3 = 6, WL5 = 10 ... WL10 = 20.
+	    // Independent of A3A_tweak_maxSiegeSquads.
+	    // Mode 0: Fixed Limit - uses A3A_tweak_maxSiegeSquads, clamped 1-20.
+	    // Note: lobby parameters can resolve as strings or booleans depending on
+	    // how the mission was started or how the in-game params editor applies
+	    // them, so coerce before comparing.
+	    A3A_fnc_planning_getMaxSiegeSquads = {
+		    private _mode = missionNamespace getVariable ["A3A_tweak_siegeSquadLimitMode", 1];
+		    if (_mode isEqualType true) then { _mode = [0, 1] select _mode };
+		    if (_mode isEqualType "") then {
+			    // Some in-game settings surfaces can apply the lobby param's
+			    // display text instead of its numeric value ("Fixed Limit",
+			    // "War Level Based (Default)"). Recover the intended mode from
+			    // the text before falling back to numeric parsing.
+			    private _txt = toLower _mode;
+			    if (_txt find "war" != -1) then { _mode = 1 } else {
+				    if (_txt find "fixed" != -1) then { _mode = 0 } else { _mode = parseNumber _mode };
+			    };
+		    };
+		    if (_mode isEqualTo 1) exitWith {
+			    private _tier = missionNamespace getVariable ["tierWar", 1];
+			    if (_tier isEqualType "") then { _tier = parseNumber _tier };
+			    2 * _tier
+		    };
+		    private _fixed = missionNamespace getVariable ["A3A_tweak_maxSiegeSquads", 10];
+		    if (_fixed isEqualType true) then { _fixed = [0, 1] select _fixed };
+		    if (_fixed isEqualType "") then { _fixed = parseNumber _fixed };
+		    (_fixed max 1) min 20
+	    };
+
 	    // Global function: Calculate the active Area of Operations (AO) radius for an objective
 	    A3A_fnc_planning_getAORadius = {
 		    params [["_marker", "", [""]]];
@@ -535,15 +656,20 @@ if (isNil "A3A_planning_initDone") then {
 				publicVariable "vehInGarage";
 			};
 
-			// 1. Try object-based HR Garage registration for live vehicles (preserves damage, fuel, magazines, ammo, persistent state)
-			if (count _liveObjects > 0 && { !isNil "HR_GRG_fnc_addVehicles" }) then {
-				try {
-					private _addedObj = [_liveObjects, ""] call HR_GRG_fnc_addVehicles;
-					diag_log format ["[A3A Planning] serverAddGarage: registered %1 live vehicle object(s) with HR_GRG_fnc_addVehicles (result: %2).", count _liveObjects, _addedObj];
-				} catch {
-					diag_log format ["[A3A Planning Warning] serverAddGarage: exception during HR_GRG_fnc_addVehicles: %1", _exception];
-				};
+		// 1. Try object-based HR Garage registration for live vehicles (preserves damage, fuel, magazines, ammo, persistent state).
+		// Note: Antistasi Ultimate V12 removed HR_GRG_fnc_addVehicles (its replacement,
+		// HR_GRG_fnc_addVehicle, requires a nearby player and cannot be used for
+		// server-side recovery). In that case fall through to the class-based path below.
+		if (count _liveObjects > 0 && { !isNil "HR_GRG_fnc_addVehicles" }) then {
+			try {
+				private _addedObj = [_liveObjects, ""] call HR_GRG_fnc_addVehicles;
+				diag_log format ["[A3A Planning] serverAddGarage: registered %1 live vehicle object(s) with HR_GRG_fnc_addVehicles (result: %2).", count _liveObjects, _addedObj];
+			} catch {
+				diag_log format ["[A3A Planning Warning] serverAddGarage: exception during HR_GRG_fnc_addVehicles: %1", _exception];
 			};
+		} else {
+			diag_log "[A3A Planning] serverAddGarage: HR_GRG_fnc_addVehicles unavailable (Antistasi Ultimate V12+) - using class-based garage registration instead.";
+		};
 
 			if (_vehicleClasses isEqualTo []) exitWith {
 				diag_log "[A3A Planning Warning] serverAddGarage: no valid vehicle classes resolved - nothing to register with HR Garage.";
@@ -591,8 +717,19 @@ if (isNil "A3A_planning_initDone") then {
 A3A_fnc_planning_onMapClick = {
 	params ["_pos"];
 
+	// Self-heal: if the commander menu is gone or the click mode was cleared,
+	// this stacked handler is stale. Remove it instead of acting on the click -
+	// a stale handler would otherwise run staging/target logic and deselect
+	// High Command groups on every main-map click.
+	if (isNull (findDisplay 60000)
+		|| { isNil "A3A_planning_mapMode" }
+		|| { A3A_planning_mapMode == "" }
+	) exitWith {
+		["A3A_planning_mapClick", "onMapSingleClick"] call BIS_fnc_removeStackedEventHandler;
+		A3A_planning_selectedStagingToMove = "";
+	};
+
 	private _display = findDisplay 60000;
-	if (isNull _display) exitWith {};
 
 	diag_log format ["[A3A Planning MapClick] Clicked at pos: %1, MapMode: %2", _pos, A3A_planning_mapMode];
 
@@ -618,10 +755,7 @@ A3A_fnc_planning_onMapClick = {
 				private _side = sidesX getVariable [_marker, sideUnknown];
 				if (_side == Occupants || _side == Invaders) then {
 					A3A_planning_objective = _marker;
-					private _name = markerText ("Dum" + _marker);
-					if (_name == "") then {
-						_name = _marker;
-					};
+					private _name = [_marker] call A3A_fnc_planning_getMarkerName;
 					["Target Selected", format ["Objective set to %1.", _name], false] call A3A_fnc_planning_showNotification;
 					A3A_planning_mapMode = ""; // Clear mode
 
@@ -670,11 +804,10 @@ A3A_fnc_planning_onMapClick = {
 					} forEach A3A_planning_queue;
 					A3A_planning_queue = _cleanedQueue;
 
-					["Staging Removed", format ["Removed staging point %1 and cleared any queued squads assigned to it.", _nearestMarker], false] call A3A_fnc_planning_showNotification;
-					A3A_planning_mapMode = "";
+				["Staging Removed", format ["Removed staging point %1 and cleared any queued squads assigned to it.", _nearestMarker], false] call A3A_fnc_planning_showNotification;
+				A3A_planning_mapMode = "";
 
-					["A3A_planning_mapClick", "onMapSingleClick"] call BIS_fnc_removeStackedEventHandler;
-					onMapSingleClick "";
+				["A3A_planning_mapClick", "onMapSingleClick"] call BIS_fnc_removeStackedEventHandler;
 
 					[_display] call A3A_fnc_planning_ui;
 				} else {
@@ -687,13 +820,10 @@ A3A_fnc_planning_onMapClick = {
 			{
 				private _side = sidesX getVariable [_x, sideUnknown];
 				if (_side == Occupants || _side == Invaders) then {
-					if (getMarkerPos _x distance2D _pos < 500) exitWith {
-						_nearEnemy = true;
-						_nearMarkerName = markerText ("Dum" + _x);
-						if (_nearMarkerName == "") then {
-							_nearMarkerName = _x;
-						};
-					};
+			if (getMarkerPos _x distance2D _pos < 500) exitWith {
+					_nearEnemy = true;
+					_nearMarkerName = [_x] call A3A_fnc_planning_getMarkerName;
+				};
 				};
 			} forEach (outposts + airportsX + resourcesX + factories + seaports + milbases);
 

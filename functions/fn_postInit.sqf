@@ -113,6 +113,15 @@ A3A_fnc_planning_localAddHC = {
 	};
 };
 
+A3A_fnc_planning_localRemoveHC = {
+	params [["_group", grpNull, [grpNull]]];
+	if (hasInterface) then {
+		// Also accepts grpNull / empty groups to purge ghost HC entries
+		player hcRemoveGroup _group;
+		diag_log format ["[A3A Planning] Removed group from player's High Command: %1", _group];
+	};
+};
+
 A3A_fnc_planning_localSideChat = {
 	params [["_message", "", [""]]];
 	if (_message == "") exitWith {};
@@ -163,6 +172,55 @@ A3A_fnc_planning_localDoMove = {
 	if (isNull _unit) exitWith {};
 	_unit doMove _pos;
 };
+
+// --- Fog of War vs V12 map interactions ---
+// Antistasi Ultimate V12 lets players hover/click map markers to open a
+// context menu (fast travel, deliver supplies, garrison, rebuild). That
+// system consults A3U_fnc_isMarkerHidden to decide which markers are
+// interactable. The fog of war hides markers via local alpha, so route the
+// check through the effective marker alpha: anything the player has not
+// discovered yet is hidden from hover tooltips, the marker browser, and the
+// click context menu as well.
+if (!isNil "A3U_fnc_isMarkerHidden") then {
+	A3U_fnc_isMarkerHidden_original = A3U_fnc_isMarkerHidden;
+	A3U_fnc_isMarkerHidden = {
+		params [["_marker", "", [""]]];
+		if (_marker == "") exitWith { false };
+
+		private _candidate = _marker;
+		if ((_candidate find "Dum") == 0) then { _candidate = _candidate select [3]; };
+
+		// Military zones are displayed through their "Dum" twin marker
+		private _militaryZones = (missionNamespace getVariable ["outposts", []])
+			+ (missionNamespace getVariable ["airportsX", []])
+			+ (missionNamespace getVariable ["milbases", []])
+			+ (missionNamespace getVariable ["resourcesX", []])
+			+ (missionNamespace getVariable ["factories", []])
+			+ (missionNamespace getVariable ["seaports", []])
+			+ (missionNamespace getVariable ["controlsX", []]);
+
+		// Towns are always interactable: their plain markers are invisible
+		// logic markers (the visible names are native map labels), so the
+		// alpha check below would wrongly report them as hidden.
+		if (_candidate in (missionNamespace getVariable ["citiesX", []])) exitWith { false };
+
+		private _visual = _candidate;
+		if (_candidate in _militaryZones) then {
+			private _dum = "Dum" + _candidate;
+			if (_dum in allMapMarkers) then { _visual = _dum; };
+		};
+
+		if (_visual in allMapMarkers) exitWith {
+			(markerAlpha _visual) < 0.5
+		};
+
+		if (!isNil "A3U_fnc_isMarkerHidden_original") exitWith {
+			[_marker] call A3U_fnc_isMarkerHidden_original
+		};
+		false
+	};
+	diag_log "[A3A Ultimate Tweaks Extender] Fog of War hooked into V12 map hover/click system (A3U_fnc_isMarkerHidden).";
+};
 // Initialize planning variables and loops
 [] call A3A_fnc_planning_init;
 
@@ -172,6 +230,12 @@ if (isServer) then {
 	{
 		_x params ["_paramName", "_defaultValue"];
 		private _val = missionNamespace getVariable [_paramName, [_paramName, _defaultValue] call BIS_fnc_getParamValue];
+		if (isNil "_val") then { _val = _defaultValue };
+		// Lobby parameters can resolve as strings or booleans depending on how
+		// the mission/params system applies them (SP vs MP lobby, in-game params
+		// editors) - all tweaks params are numeric, so coerce both cases.
+		if (_val isEqualType "") then { _val = parseNumber _val };
+		if (_val isEqualType true) then { _val = [0, 1] select _val };
 		missionNamespace setVariable [_paramName, _val, true];
 		diag_log format ["[A3A Ultimate Tweaks Extender] Synced parameter: %1 = %2", _paramName, _val];
 	} forEach [
@@ -187,6 +251,7 @@ if (isServer) then {
 		["A3A_tweak_builderChainRadius", 0],
 		["A3A_tweak_discoveryReveal", 1],
 		["A3A_tweak_discoveryDistance", 200],
+		["A3A_tweak_siegeSquadLimitMode", 1],
 		["A3A_tweak_maxSiegeSquads", 10],
 		["A3A_tweak_siegeRefundOrGarrison", 1],
 		["A3A_tweak_siegeTravelTimeMultiplier", 100],
@@ -203,24 +268,28 @@ if (isServer) then {
 	private _globalTime = if (_overrideTime == -1) then { 999999 } else { _overrideTime };
 	missionNamespace setVariable ["aiControlTime", _globalTime, true];
 
-		// AI Spawn Distance Override
-		private _minSpawnDist = missionNamespace getVariable ["A3A_tweak_minSpawnDistance", 0];
-		if (_minSpawnDist > 0) then {
-			distanceSPWN = _minSpawnDist;
-			publicVariable "distanceSPWN";
-			diag_log format ["[A3A Ultimate Tweaks Extender] Override AI Spawn Distance (distanceSPWN) set to %1m", _minSpawnDist];
-
-			// Delayed re-enforcement after Antistasi core finishes mission init
-			[] spawn {
-				sleep 5;
-				private _dist = missionNamespace getVariable ["A3A_tweak_minSpawnDistance", 0];
-				if (_dist > 0) then {
-					distanceSPWN = _dist;
-					publicVariable "distanceSPWN";
-					diag_log format ["[A3A Ultimate Tweaks Extender] Delayed enforcement: AI Spawn Distance (distanceSPWN) locked to %1m", _dist];
-				};
-			};
+	// Antistasi loads saved parameters and calculates distanceSPWN1/2 after postInit.
+	// Apply the saved campaign choice only when that initialization has completed.
+	[] spawn {
+		waitUntil {
+			sleep 0.5;
+			(missionNamespace getVariable ["A3A_startupState", ""]) == "completed"
 		};
+		private _dist = missionNamespace getVariable ["A3A_tweak_minSpawnDistance", 0];
+		if (_dist isEqualType true) then { _dist = [0, 1] select _dist };
+		if (_dist isEqualType "") then { _dist = parseNumber _dist };
+		if (_dist > 0) then {
+			distanceSPWN = _dist;
+			distanceSPWN1 = _dist * 1.3;
+			distanceSPWN2 = _dist * 0.5;
+			publicVariable "distanceSPWN";
+			publicVariable "distanceSPWN1";
+			publicVariable "distanceSPWN2";
+			diag_log format ["[A3A Ultimate Tweaks Extender] Saved AI spawn distance applied: %1m (outer %2m, inner %3m).", distanceSPWN, distanceSPWN1, distanceSPWN2];
+		} else {
+			diag_log "[A3A Ultimate Tweaks Extender] Saved AI spawn distance override is Off; using Antistasi defaults.";
+		};
+	};
 	};
 
 	A3A_tweak_fnc_revealMarker = {
@@ -281,9 +350,18 @@ if (isServer) then {
 
 				private _name = "";
 
-				if (_zone != "") then {
+			if (_zone != "") then {
+				// V12 bases carry unique military designation names (see
+				// A3A_fnc_mrkUpdate); prefer those over A3A_fnc_localizar's
+				// old "<nearest city> <base type>" naming so the discovery
+				// notification matches the map.
+				if (!isNil "A3A_fnc_planning_getBaseDesignation") then {
+					_name = [_zone] call A3A_fnc_planning_getBaseDesignation;
+				};
+				if (_name isEqualTo "" && { !isNil "A3A_fnc_localizar" }) then {
 					_name = [_zone] call A3A_fnc_localizar;
-					if (_name isEqualTo "") then {
+				};
+				if (_name isEqualTo "") then {
 						private _type = call {
 							if (_zone in (missionNamespace getVariable ["airportsX", []])) exitWith { "AIRBASE" };
 							if (_zone in (missionNamespace getVariable ["milbases", []])) exitWith { "MILITARY BASE" };
