@@ -37,6 +37,27 @@ private _fnc_postCapture = {
 		private _garrisonList = [];
 		private _allRecoveredVehicles = [];
 
+		// Antistasi treats unitCrew in a garrison as a mortar operator and spawns a static mortar per unit.
+		// Resolve rebel crew/rifleman types once so surviving crew (e.g. from recovered vehicles) garrison as infantry.
+		private _crewTypesToRemap = [];
+		private _rebRifleType = "";
+		if (_captureAction == 1) then {
+			if (!isNil "A3A_faction_reb" && { A3A_faction_reb isEqualType createHashMap }) then {
+				private _rebCrew = A3A_faction_reb getOrDefault ["unitCrew", ""];
+				if (_rebCrew != "") then { _crewTypesToRemap pushBackUnique _rebCrew; };
+				_rebRifleType = A3A_faction_reb getOrDefault ["unitRifle", ""];
+				if (_rebRifleType == "") then {
+					private _squadGroup = A3A_faction_reb getOrDefault ["groupSquad", []];
+					if (count _squadGroup > 0) then { _rebRifleType = _squadGroup # 0; };
+				};
+			};
+			private _legacyCrew = missionNamespace getVariable ["staticCrewReb", ""];
+			if (_legacyCrew != "") then { _crewTypesToRemap pushBackUnique _legacyCrew; };
+			if (_rebRifleType == "") then {
+				_rebRifleType = missionNamespace getVariable ["SDKMil", ""];
+			};
+		};
+
 		{
 			private _group = _x;
 			if (!isNull _group && {
@@ -93,6 +114,9 @@ private _fnc_postCapture = {
 							{
 								if (alive _x) then {
 									private _uType = _x getVariable ["unitType", typeOf _x];
+									if (_rebRifleType != "" && { _uType in _crewTypesToRemap }) then {
+										_uType = _rebRifleType;
+									};
 									_garrisonList pushBack [_uType, _perUnitMoney, _perUnitHR];
 									_totalGarrisonedCount = _totalGarrisonedCount + 1;
 								};

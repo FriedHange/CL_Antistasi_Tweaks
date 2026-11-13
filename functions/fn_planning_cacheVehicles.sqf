@@ -128,8 +128,10 @@ A3A_planning_cachedVehicles set ["AA", _aa];
 A3A_planning_cachedVehicles set ["APC", _apc];
 A3A_planning_cachedVehicles set ["TANK", _tank];
 
-// Pre-build available squad listbox options gated by War Level
+// Keep garage access in view even as War Level unlocks more squad types.
+// Garage stock/reservations affect the browser, not access to this entry.
 private _menuItems = [
+    ["Vehicle Crew (HQ Garage)", "14"],
     ["Infantry Squad", "0"],
     ["Infantry Team", "1"],
     ["Sniper Team", "3"]
@@ -160,12 +162,6 @@ if (_tier >= 6) then {
 
 if (_tier >= 8) then {
     if (_tank != "") then { _menuItems pushBack ["Combat Tank", "12"]; };
-};
-
-// Always offer garage crew deployment when the HQ Garage has vehicles available
-private _availableGarageVehs = call A3A_fnc_planning_getAvailableGarageVehicles;
-if (count _availableGarageVehs > 0) then {
-    _menuItems pushBack ["Vehicle Crew (HQ Garage)", "14"];
 };
 
 A3A_planning_cachedVehicles set ["MENU_ITEMS", _menuItems];

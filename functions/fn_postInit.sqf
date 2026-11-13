@@ -80,6 +80,10 @@ A3A_fnc_planning_vehicleOverwatch = compile preprocessFileLineNumbers "\CL_Antis
 A3A_fnc_planning_airOverwatch = compile preprocessFileLineNumbers "\CL_Antistasi_Tweaks\functions\fn_planning_airOverwatch.sqf";
 A3A_fnc_planning_showNotification = compile preprocessFileLineNumbers "\CL_Antistasi_Tweaks\functions\fn_planning_showNotification.sqf";
 
+// Compile persistent save and load handlers
+CL_fnc_saveState = compile preprocessFileLineNumbers "\CL_Antistasi_Tweaks\functions\fn_saveState.sqf";
+CL_fnc_loadState = compile preprocessFileLineNumbers "\CL_Antistasi_Tweaks\functions\fn_loadState.sqf";
+
 // Global locality wrappers for planning system
 A3A_fnc_planning_localCleanupMarkers = {
 	params [["_deleteAll", false, [false]]];
@@ -290,7 +294,19 @@ if (isServer) then {
 			diag_log "[A3A Ultimate Tweaks Extender] Saved AI spawn distance override is Off; using Antistasi defaults.";
 		};
 	};
-	};
+
+	// Register persistent save/load event handlers for Antistasi Ultimate extender system
+	// CBA_EVENT_SERVER_GAME_SAVE ("A3A_event_serverGameSave") and CBA_EVENT_SERVER_GAME_LOAD ("A3A_event_serverGameLoad")
+	["A3A_event_serverGameSave", {
+		_this call CL_fnc_saveState;
+	}] call CBA_fnc_addEventHandler;
+
+	["A3A_event_serverGameLoad", {
+		_this call CL_fnc_loadState;
+	}] call CBA_fnc_addEventHandler;
+
+	diag_log "[A3A Ultimate Tweaks Extender] Registered persistent save/load event handlers (A3A_event_serverGameSave, A3A_event_serverGameLoad).";
+};
 
 	A3A_tweak_fnc_revealMarker = {
 		params ["_marker", ["_zone", ""]];

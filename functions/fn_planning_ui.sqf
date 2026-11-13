@@ -14,7 +14,21 @@ if (isNull _display) exitWith {};
 // externally re-triggered tab switches), freezing the commander menu. No
 // legitimate interaction needs more than one rebuild per 100 ms.
 private _now = diag_tickTime;
-if (_now - (missionNamespace getVariable ["A3A_planning_lastBuild", -1]) < 0.1) exitWith {};
+private _elapsed = _now - (missionNamespace getVariable ["A3A_planning_lastBuild", -1]);
+if (_elapsed < 0.1) exitWith {
+	// Keep one trailing refresh instead of dropping rapid user changes.
+	if !(_display getVariable ["A3A_planning_refreshPending", false]) then {
+		_display setVariable ["A3A_planning_refreshPending", true];
+		[{
+			params ["_display"];
+			if (isNull _display) exitWith {};
+			_display setVariable ["A3A_planning_refreshPending", false];
+			if (isNil "menuSliderArray" || { isNil "menuSliderCurrent" }) exitWith {};
+			if (((menuSliderArray select menuSliderCurrent) select 1) != 8000) exitWith {};
+			[_display] call A3A_fnc_planning_ui;
+		}, [_display], (0.1 - _elapsed) + 0.001] call CBA_fnc_waitAndExecute;
+	};
+};
 A3A_planning_lastBuild = _now;
 
 // Ensure vehicle availability cache is updated/refreshed dynamically
@@ -341,7 +355,8 @@ A3A_fnc_planning_updateGarageVehicleDetails = {
 
 	private _selIdx = lbCurSel _cardList;
 	if (_selIdx == -1) exitWith {
-		_detailsPanel ctrlSetStructuredText parseText "<t align='center' color='#888888'><br/><br/><br/>No vehicle selected.<br/>Choose a vehicle from the list on the left.</t>";
+		private _emptyMessage = _cardList getVariable ["emptyMessage", "No vehicle selected. Choose a vehicle from the list on the left."];
+		_detailsPanel ctrlSetStructuredText parseText format ["<t align='center' color='#888888'><br/><br/><br/>%1</t>", _emptyMessage];
 		{
 			if (!isNull _x) then {
 				_x ctrlEnable false;
@@ -428,6 +443,9 @@ A3A_fnc_planning_refreshGarageBrowserList = {
 	if (isNull _modalGroup) exitWith {};
 
 	private _cardList = _display displayCtrl 8520;
+	// Prevent callbacks from reading old vehicle details while the list is rebuilt.
+	_cardList setVariable ["refreshing", true];
+	_cardList setVariable ["vehiclesData", []];
 	lbClear _cardList;
 
 	private _search = toLower (missionNamespace getVariable ["A3A_planning_garageSearchFilter", ""]);
@@ -454,6 +472,12 @@ A3A_fnc_planning_refreshGarageBrowserList = {
 	};
 
 	_cardList setVariable ["vehiclesData", _filtered];
+	private _emptyMessage = if (count _allVehicles == 0) then {
+		"No unqueued combat vehicles are available in the HQ Garage."
+	} else {
+		"No vehicles match the current search or category."
+	};
+	_cardList setVariable ["emptyMessage", _emptyMessage];
 
 	{
 		_x params ["_dispName", "_class", "_crewCount", "_vehUID", "_category", "_subcat", "_isAvailable", "_reason", "_healthPct", "_fuelPct", "_ammoPct", "_condition", "_weaponsList", "_picture", "_availableCount"];
@@ -483,6 +507,7 @@ A3A_fnc_planning_refreshGarageBrowserList = {
 	if (lbSize _cardList > 0) then {
 		_cardList lbSetCurSel 0;
 	};
+	_cardList setVariable ["refreshing", false];
 	[_display] call A3A_fnc_planning_updateGarageVehicleDetails;
 };
 
@@ -580,11 +605,6 @@ A3A_fnc_planning_autoQueueGarageVehicle = {
 
 A3A_fnc_planning_openGarageBrowser = {
 	params ["_display"];
-
-	private _vehicles = call A3A_fnc_planning_getAvailableGarageVehicles;
-	if (count _vehicles == 0) exitWith {
-		["HQ Garage", "No combat-ready vehicles currently available in the HQ Garage.", true] call A3A_fnc_planning_showNotification;
-	};
 
 	// Apply dynamic background blur effect
 	if (isNil "A3A_planning_garageBlur") then {
@@ -812,6 +832,7 @@ A3A_fnc_planning_openGarageBrowser = {
 
 	_cardList ctrlAddEventHandler ["LBSelChanged", {
 		private _list = _this select 0;
+		if (_list getVariable ["refreshing", false]) exitWith {};
 		private _display = ctrlParent _list;
 		[_display] call A3A_fnc_planning_updateGarageVehicleDetails;
 	}];
@@ -1024,14 +1045,16 @@ if (isNull _ctrlTitleCheck) then {
 	_ctrlSquadCombo ctrlSetFade 0;
 	_ctrlSquadCombo ctrlCommit 0;
 	_ctrlSquadCombo ctrlAddEventHandler ["LBSelChanged", {
-		private _display = ctrlParent (_this select 0);
-		private _selIdx = lbCurSel (_this select 0);
-		if (_selIdx != -1) then {
-			private _dataVal = (_this select 0) lbData _selIdx;
-			private _sIndex = parseNumber _dataVal;
-			A3A_planning_selectedSquadIndex = _sIndex;
-			[_display] call A3A_fnc_planning_ui;
-		};
+		params ["_control", "_selIdx"];
+		if (_control getVariable ["refreshing", false]) exitWith {};
+		if (_selIdx < 0 || { _selIdx >= lbSize _control }) exitWith {};
+		private _dataVal = _control lbData _selIdx;
+		if (_dataVal == "") exitWith {};
+		private _sIndex = parseNumber _dataVal;
+		if (_sIndex == A3A_planning_selectedSquadIndex) exitWith {};
+		A3A_planning_selectedSquadIndex = _sIndex;
+		private _display = ctrlParent _control;
+		[_display] call A3A_fnc_planning_ui;
 	}];
 
 	// Staging area dropdown
@@ -1370,22 +1393,31 @@ if (count A3A_planning_entryPoints > 0) then {
 
 // Populate squad type listbox
 private _ctrlSquadCombo = _display displayCtrl 8020;
+private _selectedSquadId = A3A_planning_selectedSquadIndex;
+_ctrlSquadCombo setVariable ["refreshing", true];
 lbClear _ctrlSquadCombo;
 private _available = A3A_planning_cachedVehicles getOrDefault ["MENU_ITEMS", []];
 
-private _idx = 0;
-private _selectedRow = 0;
+private _selectedRow = -1;
+private _infantryRow = -1;
 {
 	_x params ["_label", "_dataId"];
-	_ctrlSquadCombo lbAdd _label;
+	private _idx = _ctrlSquadCombo lbAdd _label;
 	_ctrlSquadCombo lbSetData [_idx, _dataId];
-	if (parseNumber _dataId == A3A_planning_selectedSquadIndex) then {
+	if (_dataId == "0") then { _infantryRow = _idx; };
+	if (parseNumber _dataId == _selectedSquadId) then {
 		_selectedRow = _idx;
 	};
-	_idx = _idx + 1;
 } forEach _available;
 
+// If the selected type is no longer unlocked, fall back to infantry by ID.
+if (_selectedRow == -1) then { _selectedRow = _infantryRow; };
+if (_selectedRow == -1 && { count _available > 0 }) then { _selectedRow = 0; };
 _ctrlSquadCombo lbSetCurSel _selectedRow;
+if (_selectedRow != -1) then {
+	A3A_planning_selectedSquadIndex = parseNumber (_ctrlSquadCombo lbData _selectedRow);
+};
+_ctrlSquadCombo setVariable ["refreshing", false];
 
 // Show/hide and populate garage vehicle browser controls based on selection
 private _isGarageCrewSelected = (A3A_planning_selectedSquadIndex == 14);
@@ -1400,6 +1432,13 @@ if (!isNull _ctrlVehLabel && !isNull _ctrlBtnVehBrowse) then {
 
 	if (_isGarageCrewSelected) then {
 		private _selClass = missionNamespace getVariable ["A3A_planning_selectedGarageVehicleClass", ""];
+		if (_selClass != "") then {
+			private _vehicles = call A3A_fnc_planning_getAvailableGarageVehicles;
+			if (_vehicles findIf { (_x select 1) == _selClass && { _x select 6 } } == -1) then {
+				_selClass = "";
+				missionNamespace setVariable ["A3A_planning_selectedGarageVehicleClass", ""];
+			};
+		};
 		if (_selClass == "") then {
 			_ctrlBtnVehBrowse ctrlSetText "Select Vehicle";
 			_ctrlVehSummary ctrlSetStructuredText parseText "<t color='#AAAAAA'>Selected Vehicle: None</t>";
